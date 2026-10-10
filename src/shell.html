@@ -42,8 +42,8 @@ label.pick input { position: absolute; opacity: 0; width: 1px; height: 1px; }
 
 #hud { position: fixed; left: 0; right: 0; bottom: 0; padding: 14px 16px calc(14px + env(safe-area-inset-bottom, 0px)); display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; background: linear-gradient(to top, rgba(5, 4, 10, .78), rgba(5, 4, 10, 0)); transition: opacity .5s; }
 #hud.idle { opacity: 0; pointer-events: none; }
-/* On phones, Settings is a tab on the left edge that fades with the strip */
-#tab { display: none; z-index: 2; position: fixed; left: 0; top: 50%; transform: translateY(-50%); writing-mode: vertical-rl; padding: 14px 8px; border: 1px solid var(--line); border-left: 0; border-radius: 0 12px 12px 0; background: var(--glass); backdrop-filter: blur(22px) saturate(1.4); -webkit-backdrop-filter: blur(22px) saturate(1.4); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; transition: opacity .5s; }
+/* On phones, Settings is a tab on the right edge: the one bit of the drawer left peeking out. It fades with the strip */
+#tab { display: none; z-index: 2; position: fixed; right: 0; top: 50%; transform: translateY(-50%); writing-mode: vertical-rl; padding: 14px 8px; border: 1px solid var(--line); border-right: 0; border-radius: 12px 0 0 12px; background: var(--glass); backdrop-filter: blur(22px) saturate(1.4); -webkit-backdrop-filter: blur(22px) saturate(1.4); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; transition: opacity .5s; }
 #tab.idle { opacity: 0; pointer-events: none; }
 body.dash-open #tab { display: none; }
 body.dash-open #hud { right: var(--dash); }

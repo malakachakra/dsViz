@@ -169,8 +169,13 @@ window.addEventListener('dragover', e => e.preventDefault());
 window.addEventListener('drop', e => { e.preventDefault(); dragDepth = 0; $('drop').hidden = true; const f = e.dataTransfer && e.dataTransfer.files; if (f && f.length) choose(async () => useFiles(f)); });
 
 // ---------- Boot ----------
-// Phones cannot capture another app's audio, so the microphone leads there; iPhones have no fullscreen either.
-if (!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia)) { $('srcTab').hidden = true; const m = $('srcMic'); m.classList.add('main'); m.querySelector('small').textContent = 'Listens to the room. Play the music on a speaker nearby.'; m.parentNode.prepend(m); }
+// On a phone the microphone leads: no phone browser captures another app's audio in practice, even where the
+// function exists. Where it is missing the option goes; where a phone does have it, it drops to the bottom.
+const canCapture = !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia);
+if (!canCapture || PHONE) {
+  const m = $('srcMic'), t = $('srcTab'); m.classList.add('main'); m.querySelector('small').textContent = 'Listens to the room. Play the music on a speaker nearby.'; m.parentNode.prepend(m);
+  if (!canCapture) t.hidden = true; else { t.classList.remove('main'); t.parentNode.append(t); t.querySelector('small').textContent = 'Rarely works on a phone, but this browser offers it.'; }
+}
 if (!document.documentElement.requestFullscreen) $('bFull').hidden = true;
 if (!gl) {
   say('This browser has no WebGL2, which the visualizer needs. A current Chrome, Edge or Firefox will run it.');

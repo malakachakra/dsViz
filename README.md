@@ -20,7 +20,7 @@ Open `index.html` in Chrome or Edge on a computer, then choose where the music c
 - **Microphone.** Listens to the room. Pick which microphone under Settings.
 - **Demo beat.** A built-in loop, to see how it reacts.
 
-It needs a browser with WebGL2, and is built for desktop Chrome and Edge. On a phone, choose Microphone or audio files (phones cannot capture another app's audio); swipe across the picture to change scene, and Settings is the tab on the left edge.
+It needs a browser with WebGL2, and is built for desktop Chrome and Edge. On a phone, choose Microphone or audio files (phones cannot capture another app's audio); swipe across the picture to change scene, and Settings is the tab on the right edge.
 
 ## Controls
 

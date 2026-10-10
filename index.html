@@ -52,8 +52,8 @@ label.pick input { position: absolute; opacity: 0; width: 1px; height: 1px; }
 
 #hud { position: fixed; left: 0; right: 0; bottom: 0; padding: 14px 16px calc(14px + env(safe-area-inset-bottom, 0px)); display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; background: linear-gradient(to top, rgba(5, 4, 10, .78), rgba(5, 4, 10, 0)); transition: opacity .5s; }
 #hud.idle { opacity: 0; pointer-events: none; }
-/* On phones, Settings is a tab on the left edge that fades with the strip */
-#tab { display: none; z-index: 2; position: fixed; left: 0; top: 50%; transform: translateY(-50%); writing-mode: vertical-rl; padding: 14px 8px; border: 1px solid var(--line); border-left: 0; border-radius: 0 12px 12px 0; background: var(--glass); backdrop-filter: blur(22px) saturate(1.4); -webkit-backdrop-filter: blur(22px) saturate(1.4); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; transition: opacity .5s; }
+/* On phones, Settings is a tab on the right edge: the one bit of the drawer left peeking out. It fades with the strip */
+#tab { display: none; z-index: 2; position: fixed; right: 0; top: 50%; transform: translateY(-50%); writing-mode: vertical-rl; padding: 14px 8px; border: 1px solid var(--line); border-right: 0; border-radius: 12px 0 0 12px; background: var(--glass); backdrop-filter: blur(22px) saturate(1.4); -webkit-backdrop-filter: blur(22px) saturate(1.4); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; transition: opacity .5s; }
 #tab.idle { opacity: 0; pointer-events: none; }
 body.dash-open #tab { display: none; }
 body.dash-open #hud { right: var(--dash); }
@@ -188,7 +188,8 @@ body.nocursor, body.nocursor * { cursor: none; }
 // ---------- Settings: one object every part of the visualizer reads, remembered between sessions ----------
 // What kind of screen this is: a phone gets the touch layout and starts lighter.
 const TOUCH = !!(window.matchMedia && matchMedia('(pointer: coarse)').matches);
-const AUTO_CAP = TOUCH && Math.min(screen.width, screen.height) < 900 ? 720 : 1080;   // where Auto detail starts
+const PHONE = TOUCH && Math.min(screen.width, screen.height) < 900;
+const AUTO_CAP = PHONE ? 720 : 1080;   // where Auto detail starts
 const DEFAULTS = {
   intensity: 1, speed: 1, punch: 1, bass: 1, mid: 1, treb: 1,          // music
   bright: 1, trail: 1, glow: 1, hueShift: 0, sat: 1,                  // picture
@@ -2490,8 +2491,13 @@ window.addEventListener('dragover', e => e.preventDefault());
 window.addEventListener('drop', e => { e.preventDefault(); dragDepth = 0; $('drop').hidden = true; const f = e.dataTransfer && e.dataTransfer.files; if (f && f.length) choose(async () => useFiles(f)); });
 
 // ---------- Boot ----------
-// Phones cannot capture another app's audio, so the microphone leads there; iPhones have no fullscreen either.
-if (!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia)) { $('srcTab').hidden = true; const m = $('srcMic'); m.classList.add('main'); m.querySelector('small').textContent = 'Listens to the room. Play the music on a speaker nearby.'; m.parentNode.prepend(m); }
+// On a phone the microphone leads: no phone browser captures another app's audio in practice, even where the
+// function exists. Where it is missing the option goes; where a phone does have it, it drops to the bottom.
+const canCapture = !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia);
+if (!canCapture || PHONE) {
+  const m = $('srcMic'), t = $('srcTab'); m.classList.add('main'); m.querySelector('small').textContent = 'Listens to the room. Play the music on a speaker nearby.'; m.parentNode.prepend(m);
+  if (!canCapture) t.hidden = true; else { t.classList.remove('main'); t.parentNode.append(t); t.querySelector('small').textContent = 'Rarely works on a phone, but this browser offers it.'; }
+}
 if (!document.documentElement.requestFullscreen) $('bFull').hidden = true;
 if (!gl) {
   say('This browser has no WebGL2, which the visualizer needs. A current Chrome, Edge or Firefox will run it.');
