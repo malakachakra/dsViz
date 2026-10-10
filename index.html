@@ -53,9 +53,10 @@ label.pick input { position: absolute; opacity: 0; width: 1px; height: 1px; }
 #hud { position: fixed; left: 0; right: 0; bottom: 0; padding: 14px 16px calc(14px + env(safe-area-inset-bottom, 0px)); display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; background: linear-gradient(to top, rgba(5, 4, 10, .78), rgba(5, 4, 10, 0)); transition: opacity .5s; }
 #hud.idle { opacity: 0; pointer-events: none; }
 /* On phones, Settings is a tab on the right edge: the one bit of the drawer left peeking out. It fades with the strip */
-#tab { display: none; z-index: 2; position: fixed; right: 0; top: 50%; transform: translateY(-50%); writing-mode: vertical-rl; padding: 14px 8px; border: 1px solid var(--line); border-right: 0; border-radius: 12px 0 0 12px; background: var(--glass); backdrop-filter: blur(22px) saturate(1.4); -webkit-backdrop-filter: blur(22px) saturate(1.4); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; transition: opacity .5s; }
+#tab { display: none; z-index: 4; position: fixed; right: 0; top: 50%; transform: translateY(-50%); writing-mode: vertical-rl; padding: 14px 8px; border: 1px solid var(--line); border-right: 0; border-radius: 12px 0 0 12px; background: var(--glass); backdrop-filter: blur(22px) saturate(1.4); -webkit-backdrop-filter: blur(22px) saturate(1.4); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; transition: opacity .5s; }
 #tab.idle { opacity: 0; pointer-events: none; }
-body.dash-open #tab { display: none; }
+/* while the drawer is open the tab rides on its left edge and reads Close, so a long scroll never hides the way out */
+body.dash-open #tab { right: auto; left: 0; border-left: 0; border-right: 1px solid var(--line); border-radius: 0 12px 12px 0; }
 body.dash-open #hud { right: var(--dash); }
 #name { font-family: var(--display); font-weight: 600; font-size: 18px; letter-spacing: -.01em; min-width: 0; margin-right: auto; overflow-wrap: anywhere; }
 #name small { display: block; font-family: var(--mono); font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--dim); font-weight: 400; }
@@ -101,6 +102,7 @@ body.nocursor, body.nocursor * { cursor: none; }
   #hud .grp { flex-basis: 100%; }                 /* the name and meters on one row, the pills on the next */
   #bDash, #bFull { display: none; }               /* Settings lives on the tab; phones mostly cannot go fullscreen */
   #tab { display: block; }
+  body.dash-open #dash { padding-left: 44px; }    /* a gutter for the Close tab */
 }
 @media (max-width: 640px), ((max-width: 960px) and (max-height: 500px)) { body.dash-open #hud { display: none; } }
 @media (prefers-reduced-motion: reduce) { #hud, button, #dash, #dash.open { transition: none; } }
@@ -2358,7 +2360,7 @@ $('bSrc').onclick = () => showStart('');
 $('startClose').onclick = hideStart;
 $('bFull').onclick = fullscreen;
 $('bDash').onclick = () => setDash(!dash.classList.contains('open'));
-$('tab').onclick = () => setDash(true);
+$('tab').onclick = () => setDash(!dash.classList.contains('open'));
 $('bLink').onclick = copyLink;
 $('dashClose').onclick = () => setDash(false);
 $('bSpaces').onclick = () => { CFG.spaces = !CFG.spaces; if (!CFG.spaces && cur.stage) cur.stage = 0; syncDash(); saveCfg(); };
@@ -2379,7 +2381,7 @@ function setStage(i) { if (i && !cur.P.stages.includes(i)) return; cur.stage = i
 function sectionDefault(secId) { for (const r of ROWS) if (r[0] === secId) CFG[r[1]] = DEFAULTS[r[1]]; syncDash(); saveCfg(); }
 function sectionRandom(secId) { for (const [sec, key, , , , stp, , , band] of ROWS) if (sec === secId && band) CFG[key] = +(Math.round((band[0] + Math.random() * (band[1] - band[0])) / stp) * stp).toFixed(3); syncDash(); saveCfg(); }
 function setCam(on) { if (on) CFG.cam = CAM.lastAmt || 1; else { CAM.lastAmt = CFG.cam || 1; CFG.cam = 0; } syncDash(); saveCfg(); }
-function setDash(open) { dash.classList.toggle('open', open); document.body.classList.toggle('dash-open', open); $('bDash').setAttribute('aria-pressed', String(open)); poke(); }
+function setDash(open) { dash.classList.toggle('open', open); document.body.classList.toggle('dash-open', open); $('bDash').setAttribute('aria-pressed', String(open)); tab.textContent = open ? 'Close' : 'Settings'; tab.title = open ? 'Close settings' : 'Open settings'; poke(); }
 function fullscreen() {
   const el = document.documentElement;
   if (document.fullscreenElement) document.exitFullscreen().catch(() => {});

@@ -36,7 +36,7 @@ $('bSrc').onclick = () => showStart('');
 $('startClose').onclick = hideStart;
 $('bFull').onclick = fullscreen;
 $('bDash').onclick = () => setDash(!dash.classList.contains('open'));
-$('tab').onclick = () => setDash(true);
+$('tab').onclick = () => setDash(!dash.classList.contains('open'));
 $('bLink').onclick = copyLink;
 $('dashClose').onclick = () => setDash(false);
 $('bSpaces').onclick = () => { CFG.spaces = !CFG.spaces; if (!CFG.spaces && cur.stage) cur.stage = 0; syncDash(); saveCfg(); };
@@ -57,7 +57,7 @@ function setStage(i) { if (i && !cur.P.stages.includes(i)) return; cur.stage = i
 function sectionDefault(secId) { for (const r of ROWS) if (r[0] === secId) CFG[r[1]] = DEFAULTS[r[1]]; syncDash(); saveCfg(); }
 function sectionRandom(secId) { for (const [sec, key, , , , stp, , , band] of ROWS) if (sec === secId && band) CFG[key] = +(Math.round((band[0] + Math.random() * (band[1] - band[0])) / stp) * stp).toFixed(3); syncDash(); saveCfg(); }
 function setCam(on) { if (on) CFG.cam = CAM.lastAmt || 1; else { CAM.lastAmt = CFG.cam || 1; CFG.cam = 0; } syncDash(); saveCfg(); }
-function setDash(open) { dash.classList.toggle('open', open); document.body.classList.toggle('dash-open', open); $('bDash').setAttribute('aria-pressed', String(open)); poke(); }
+function setDash(open) { dash.classList.toggle('open', open); document.body.classList.toggle('dash-open', open); $('bDash').setAttribute('aria-pressed', String(open)); tab.textContent = open ? 'Close' : 'Settings'; tab.title = open ? 'Close settings' : 'Open settings'; poke(); }
 function fullscreen() {
   const el = document.documentElement;
   if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
