@@ -1,0 +1,156 @@
+<title>dsViz</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Syne:wght@600;800&family=DM+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one full-bleed canvas; a source card docked bottom-left; a slim control strip that fades with the pointer; a settings drawer on the right. */
+:root {
+  color-scheme: dark;
+  --bg: #05040a;
+  --ink: #f4f1ff;
+  --dim: rgba(244, 241, 255, .62);
+  --glass: rgba(14, 11, 24, .62);
+  --line: rgba(244, 241, 255, .16);
+  --accent: #ff5fa2;
+  --display: "Syne", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --mono: "DM Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --dash: min(372px, 100%);
+}
+*, *::before, *::after { box-sizing: border-box; }
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--ink); font-family: var(--mono); font-size: 13px; overflow: hidden; }
+#c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; background: none; border: 1px solid var(--line); border-radius: 999px; padding: 7px 13px; transition: background .15s, border-color .15s, color .15s; }
+button:hover { background: rgba(244, 241, 255, .12); border-color: var(--dim); }
+button:disabled { opacity: .4; cursor: default; }
+button:focus-visible, input:focus-visible, select:focus-visible, label.pick:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #0b0612; }
+input[type=range] { accent-color: var(--accent); min-width: 0; width: 100%; }
+
+#start { z-index: 2; position: fixed; left: 16px; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); max-width: 400px; max-height: calc(100% - 32px); overflow-y: auto; background: var(--glass); border: 1px solid var(--line); border-radius: 18px; padding: 22px; backdrop-filter: blur(22px) saturate(1.4); -webkit-backdrop-filter: blur(22px) saturate(1.4); display: flex; flex-direction: column; gap: 14px; }
+#start h1 { font-family: var(--display); font-weight: 800; font-size: clamp(24px, 6vh, 34px); line-height: .95; letter-spacing: -.02em; margin: 0; text-wrap: balance; }
+#start p { margin: 0; color: var(--dim); line-height: 1.5; }
+.sources { display: flex; flex-direction: column; gap: 8px; }
+.sources button, label.pick { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; border-radius: 12px; padding: 10px 14px; border: 1px solid var(--line); cursor: pointer; transition: background .15s, border-color .15s; }
+label.pick:hover { background: rgba(244, 241, 255, .12); border-color: var(--dim); }
+.sources b { font-weight: 500; font-size: 14px; }
+.sources small { color: var(--dim); font-size: 11.5px; line-height: 1.4; }
+.sources .main { border-color: var(--accent); }
+label.pick input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+#msg { color: var(--accent); min-height: 1.4em; line-height: 1.4; }
+#msg:empty { display: none; }
+#startClose { align-self: flex-start; }
+
+#hud { position: fixed; left: 0; right: 0; bottom: 0; padding: 14px 16px calc(14px + env(safe-area-inset-bottom, 0px)); display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; background: linear-gradient(to top, rgba(5, 4, 10, .78), rgba(5, 4, 10, 0)); transition: opacity .5s; }
+#hud.idle { opacity: 0; pointer-events: none; }
+body.dash-open #hud { right: var(--dash); }
+#name { font-family: var(--display); font-weight: 600; font-size: 18px; letter-spacing: -.01em; min-width: 0; margin-right: auto; overflow-wrap: anywhere; }
+#name small { display: block; font-family: var(--mono); font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--dim); font-weight: 400; }
+#note { display: block; font-family: var(--mono); font-size: 11.5px; font-weight: 400; color: var(--accent); letter-spacing: 0; }
+#note:empty { display: none; }
+.grp { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.meters { display: flex; align-items: flex-end; gap: 3px; height: 26px; padding-right: 4px; }
+.meters i { display: block; width: 6px; height: 100%; background: var(--ink); border-radius: 2px; transform-origin: bottom; transform: scaleY(.04); opacity: .85; }
+.meters i#mBeat { width: 10px; height: 10px; border-radius: 50%; align-self: center; margin-left: 4px; background: var(--accent); transform: scale(.3); }
+#player { display: flex; align-items: center; gap: 8px; min-width: 0; }
+#track { color: var(--dim); max-width: 22ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Settings drawer */
+#dash { z-index: 3; position: fixed; top: 0; right: 0; bottom: 0; width: var(--dash); padding: 18px 18px calc(18px + env(safe-area-inset-bottom, 0px)); overflow-y: auto; background: var(--glass); border-left: 1px solid var(--line); backdrop-filter: blur(26px) saturate(1.4); -webkit-backdrop-filter: blur(26px) saturate(1.4); display: flex; flex-direction: column; gap: 20px; transform: translateX(104%); visibility: hidden; transition: transform .28s ease, visibility 0s .28s; }
+#dash.open { transform: none; visibility: visible; transition: transform .28s ease; }
+#dash header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+#dash h2 { font-family: var(--display); font-weight: 800; font-size: 22px; letter-spacing: -.02em; margin: 0; }
+#dash section { display: flex; flex-direction: column; gap: 9px; }
+#dash h3 { margin: 0 0 2px; font-size: 10.5px; font-weight: 500; letter-spacing: .14em; text-transform: uppercase; color: var(--dim); display: flex; align-items: center; gap: 10px; }
+#dash h3::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.row { display: grid; grid-template-columns: 96px minmax(0, 1fr) 46px; align-items: center; gap: 10px; }
+.row output { text-align: right; color: var(--dim); font-variant-numeric: tabular-nums; }
+.hint { margin: 0; color: var(--dim); font-size: 11.5px; line-height: 1.45; }
+.btns { display: flex; flex-wrap: wrap; gap: 6px; }
+.btns button { padding: 6px 11px; }
+#inLvl { height: 8px; border-radius: 4px; background: rgba(244, 241, 255, .12); overflow: hidden; }
+#inBar { display: block; height: 100%; width: 100%; background: var(--accent); transform-origin: left; transform: scaleX(0); }
+#inTxt { margin: 0; line-height: 1.45; }
+#micRow { display: grid; grid-template-columns: 96px minmax(0, 1fr); align-items: center; gap: 10px; }
+select { background: rgba(244, 241, 255, .08); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; min-width: 0; width: 100%; }
+select option { background: #15111f; }
+#sceneList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+#sceneList li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 6px; padding: 3px 0; border-top: 1px solid rgba(244, 241, 255, .07); }
+#sceneList .go { border: 0; border-radius: 6px; padding: 5px 6px; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#sceneList li.cur .go { color: var(--accent); }
+#sceneList li.off .go { color: var(--dim); text-decoration: line-through; }
+#sceneList .tg { padding: 3px 9px; font-size: 11px; }
+#drop { position: fixed; inset: 12px; border: 2px dashed var(--accent); border-radius: 20px; display: grid; place-items: center; font-family: var(--display); font-size: 28px; font-weight: 800; background: rgba(5, 4, 10, .6); pointer-events: none; }
+body.nocursor, body.nocursor * { cursor: none; }
+@media (max-width: 640px) { body.dash-open #hud { display: none; } }
+@media (prefers-reduced-motion: reduce) { #hud, button, #dash, #dash.open { transition: none; } }
+</style>
+
+<canvas id="c" aria-label="Music visualizer"></canvas>
+
+<section id="start" aria-labelledby="ttl">
+  <h1 id="ttl">dsViz</h1>
+  <p>A feedback visualizer that moves with whatever you play. Choose where the music comes from.</p>
+  <div class="sources">
+    <button id="srcTab" class="main" type="button"><b>Capture tab or system audio</b><small>Pick the tab or screen that is playing, and switch on "Share audio" in the dialog.</small></button>
+    <label class="pick"><input id="srcFile" type="file" accept="audio/*,video/*" multiple><b>Play audio files</b><small>Choose files, or drop them anywhere on the page.</small></label>
+    <button id="srcMic" type="button"><b>Microphone</b><small>Listens to the room. Choose which microphone under Settings.</small></button>
+    <button id="srcDemo" type="button"><b>Demo beat</b><small>A built-in loop, to see how it reacts.</small></button>
+  </div>
+  <div id="msg" role="status" aria-live="polite"></div>
+  <button id="startClose" type="button" hidden>Keep the current source</button>
+</section>
+
+<div id="hud" hidden>
+  <div id="name"><small id="nameSub">Scene</small><span id="nameTxt">dsViz</span><span id="note" role="status"></span></div>
+  <div id="player" hidden>
+    <button id="pPlay" type="button">Pause</button>
+    <button id="pNext" type="button" title="Next track">Skip</button>
+    <span id="track"></span>
+  </div>
+  <div class="meters" title="Bass, mids, treble and beat as the visualizer hears them" aria-hidden="true"><i id="mB"></i><i id="mM"></i><i id="mT"></i><i id="mBeat"></i></div>
+  <div class="grp">
+    <button id="bPrev" type="button" title="Previous scene (left arrow)">Prev</button>
+    <button id="bNext" type="button" title="Next scene (right arrow or space)">Next</button>
+    <button id="bAuto" type="button" aria-pressed="true" title="Change scenes automatically (L)">Auto</button>
+    <button id="bDash" type="button" aria-pressed="false" title="Open settings (D)">Settings</button>
+    <button id="bSrc" type="button" title="Change the audio source (S)">Source</button>
+    <button id="bFull" type="button" title="Fullscreen (F)">Fullscreen</button>
+  </div>
+</div>
+
+<aside id="dash" aria-label="Settings">
+  <header><h2>Settings</h2><button id="dashClose" type="button">Close</button></header>
+  <section>
+    <h3>Sound in</h3>
+    <div id="inLvl" title="How loud the incoming sound is"><i id="inBar"></i></div>
+    <p id="inTxt">No source chosen yet.</p>
+    <label id="micRow" for="micPick" hidden><span>Microphone</span><select id="micPick"></select></label>
+  </section>
+  <section id="secMusic"><h3>Music</h3></section>
+  <section id="secPic"><h3>Picture</h3></section>
+  <section id="secCam">
+    <h3>Camera</h3>
+    <div class="btns">
+      <button id="bSpaces" type="button" aria-pressed="true" title="Let scenes wrap into tunnels, domes and floors you fly through">3D spaces</button>
+      <button id="bSpace" type="button" title="Change the space this scene is in (V)">Space: Flat</button>
+    </div>
+  </section>
+  <section id="secScenes">
+    <h3>Scenes</h3>
+    <div class="btns">
+      <button id="bAuto2" type="button" aria-pressed="true">Change automatically</button>
+      <button id="bFavOnly" type="button" aria-pressed="false">Favourites only</button>
+    </div>
+    <p class="hint">Fav keeps a scene in the Favourites-only rotation. Hide removes it from Auto, Next and Prev.</p>
+    <ul id="sceneList"></ul>
+  </section>
+  <section>
+    <h3>Detail</h3>
+    <div class="btns" id="detailBtns"></div>
+    <p class="hint">How sharply the picture is rendered. Auto lowers itself if this computer struggles; the others stay fixed.</p>
+  </section>
+  <section>
+    <div class="btns"><button id="bReset" type="button">Reset all settings</button></div>
+  </section>
+</aside>
+<div id="drop" hidden>Drop to play</div>
