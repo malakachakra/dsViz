@@ -1,11 +1,12 @@
 # dsViz
 
-A music visualizer that runs in the browser. It listens to whatever is playing and drives 22 scenes with it: feedback warps in the Milkdrop tradition, real fluid and ripple simulation, and 3D spaces the camera flies through.
+A music visualizer that runs in the browser. It listens to whatever is playing and drives 29 scenes with it: feedback warps in the Milkdrop tradition, fluid, ripple and reaction-diffusion simulation, crowds of GPU agents (slime mould, a starling flock), a fractal dive, and 3D spaces the camera flies through.
 
 Everything is one file, `index.html`. There is nothing to install.
 
 | | |
 |---|---|
+| ![Henry](docs/henry.png) | ![Slime Mould](docs/slime-mould.png) |
 | ![Moon Pool](docs/moon-pool.png) | ![Oil Slick](docs/oil-slick.png) |
 | ![Ridgeline](docs/ridgeline.png) | ![Velvet Smoke](docs/velvet-smoke.png) |
 
@@ -46,8 +47,8 @@ The Settings drawer (D) holds everything adjustable. Settings are saved in the b
 - **Music:** Intensity, Speed, Beat punch, and separate Bass, Mids and Treble.
 - **Picture:** Brightness, Trails, Glow, Saturation, Colour shift.
 - **Camera:** how far it moves, and whether scenes may wrap into 3D spaces (tunnel, dome, floor).
-- **Scenes:** time per scene, crossfade length, and Fav and Hide for each scene.
 - **Detail:** how sharply the picture is rendered. Auto lowers itself if the computer struggles.
+- **Scenes:** time per scene, crossfade length, and Fav and Hide for each scene.
 
 ## Scenes
 
@@ -73,6 +74,13 @@ The Settings drawer (D) holds everything adjustable. Settings are saved in the b
 20. Petri
 21. Hall of Mirrors
 22. Maelstrom
+23. Slime Mould
+24. Murmuration
+25. Lichtenberg
+26. Cathode
+27. Deep Field
+28. Loom
+29. Henry
 
 ## How it works
 
@@ -82,7 +90,11 @@ Each scene is three things:
 - a **draw step**, which adds what the music is doing this frame (waveforms, shapes, particles);
 - a **composite shader**, which turns that buffer into the picture, seen from a camera.
 
-Some scenes lean on a simulation that runs alongside: a fluid solver whose velocity carries the picture, or a low-resolution buffer running the wave equation or reaction-diffusion.
+Some scenes lean on a simulation that runs alongside: a fluid solver whose velocity carries the picture, or a low-resolution buffer running the wave equation or reaction-diffusion. Two scenes run crowds of agents on the GPU, each agent a texel of a float texture: Slime Mould's quarter of a million cells follow and lay down scent in that buffer, and Murmuration's birds read it as the crowd around them.
+
+A scene can live in one of four spaces: flat (the picture on a plane the camera orbits), or wrapped around the camera as a tunnel, a dome or a floor. Which spaces suit which scene is a table in `07-main.js`; a scene with a horizon can set `panorama: true` so the dome keeps its sky up and its ground down.
+
+Henry is different from the rest: a painting rebuilt from scratch in a shader, so that every part of it can move with the music.
 
 Sound is analysed into bass, mids and treble, each measured against its own recent average, so a quiet source and a loud one drive the picture equally hard. Kicks and beats are detected from sudden rises in the spectrum.
 
@@ -103,7 +115,9 @@ python3 build.py
 | `03-sources.js` | Tab capture, microphone, file playback, demo beat |
 | `04-draw.js` | Glowing lines and shapes |
 | `04b-fluid.js` | Fluid solver and the camera |
-| `05-presets-a.js` to `06d-presets-e.js` | The scenes |
+| `04c-agents.js` | GPU agents: a float texture of positions, updated and drawn by each scene's shaders |
+| `05-presets-a.js` to `06f-presets-g.js` | The scenes |
+| `06g-henry.js` | Henry |
 | `07-main.js` | Render loop and scene switching |
 | `08-ui.js` | Controls and the Settings drawer |
 

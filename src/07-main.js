@@ -7,7 +7,8 @@ const UNI = ['t', 'mt', 'bass', 'mid', 'treb', 'bassA', 'midA', 'trebA', 'beat',
 const DETAIL = [['Auto', 1080], ['720p', 720], ['1080p', 1080], ['1440p', 1440], ['Full', 4320]];
 // Which 3D spaces suit which scene (1 tunnel, 2 dome, 3 floor). Scenes not listed are either flat or already 3D.
 const SPACES = { 'Plasma Tide': [1, 2], 'Prism Cathedral': [2, 3], 'Aurora Veil': [2], 'Ink Bloom': [3], 'Solar Petals': [1], 'Julia Garden': [1, 2, 3], 'Silk Ribbons': [1],
-  'Velvet Smoke': [2], 'Oil Slick': [3], 'Acrylic Pour': [3], 'Glass Tide': [1], 'Pool Floor': [3], 'Quicksilver': [3], 'Petri': [2, 3], 'Maelstrom': [3, 1], 'Hall of Mirrors': [2] };
+  'Neon Horizon': [2], 'Velvet Smoke': [2], 'Oil Slick': [3], 'Acrylic Pour': [3], 'Glass Tide': [1], 'Pool Floor': [3], 'Quicksilver': [3], 'Petri': [2, 3], 'Maelstrom': [3, 1], 'Hall of Mirrors': [2],
+  'Slime Mould': [2, 3], 'Lichtenberg': [2], 'Cathode': [1], 'Deep Field': [1, 3], 'Loom': [1, 3], 'Henry': [2] };
 let downProg, upProg;
 
 function build() {
@@ -15,6 +16,7 @@ function build() {
   for (const P of PRESETS) {
     P.warpProg = program(VERT, HEAD + P.warp + WARP_MAIN); P.compProg = program(VERT, HEAD + COMP_LIB + P.comp + COMP_MAIN);
     if (P.sim) P.simProg = program(VERT, HEAD + P.sim + SIM_MAIN);
+    if (P.agents) AGENTS.setup(P);
     P.stages = SPACES[P.name] || [];
   }
 }
@@ -44,10 +46,12 @@ function useScene(prog, S, prevTex, blurTex) {
   gl.uniform1f(u.spd, CFG.speed * frn); gl.uniform1f(u.dkx, frn / CFG.trail);     // Speed and Trails reach every warp shader here
   gl.uniform4fv(u.cam, camFor(S)); gl.uniform1f(u.fit, camFit(S, W / H)); gl.uniform1i(u.stage, S.stage || 0); gl.uniform4fv(u.fly, flyFor(S, clock));
   gl.uniform4f(u.look, CFG.bright, CFG.sat, CFG.hueShift, CFG.glow);
+  gl.uniform1f(u.pano, S.P.panorama ? 1 : 0); gl.uniform4fv(u.u0, S.u0); gl.uniform4fv(u.u1, S.u1);
+  if (S.P.ag && S.P.ag.a) { bindTex(5, S.P.ag.a.tex); gl.uniform1i(u.agentT, 5); }
   for (const k of UNI) if (u[k]) gl.uniform1f(u[k], k === 't' ? S.t : k === 'mt' ? S.mt : A[k]);
 }
 function pickStage(P) { return CFG.spaces && CFG.cam > 0 && P.stages.length && Math.random() < .55 ? P.stages[Math.floor(Math.random() * P.stages.length)] : 0; }
-function makeState(P) { const S = { P, t: 0, mt: Math.random() * 60, seed: [Math.random(), Math.random(), Math.random(), Math.random()], stage: pickStage(P) }; if (P.init) P.init(S); return S; }
+function makeState(P) { const S = { P, t: 0, mt: Math.random() * 60, seed: [Math.random(), Math.random(), Math.random(), Math.random()], stage: pickStage(P), u0: new Float32Array(4), u1: new Float32Array(4) }; if (P.init) P.init(S); return S; }
 function label() {
   $('nameTxt').textContent = cur.P.name;
   $('nameSub').textContent = 'Scene ' + (cur.i + 1) + ' of ' + PRESETS.length + (cur.stage ? ' · ' + STAGES[cur.stage] : '');
@@ -85,6 +89,9 @@ function render(dt) {
   // 0. simulations the scenes lean on: fluid velocity, and the low-res buffer for ripples and growth
   const fs = cur.P.fluid ? cur : (old && old.P.fluid ? old : null);
   if (fs) FLUID.step(sdt, asp, fs.P.fluid, () => fs.P.force(fs, sdt));
+  for (const S of old ? [cur, old] : [cur]) if (S.P.update) S.P.update(S, sdt);     // per-frame bookkeeping a scene keeps in JS (sets u0/u1 for its shaders)
+  const as = cur.P.agents ? cur : (old && old.P.agents ? old : null);
+  if (as) AGENTS.step(as, asp);
   const ss = cur.P.sim ? cur : (old && old.P.sim ? old : null);
   if (ss) for (let i = 0, n = Math.max(1, Math.min(18, Math.round((ss.P.simSteps || 2) * CFG.speed))); i < n; i++) {
     gl.bindFramebuffer(gl.FRAMEBUFFER, auxB.fb); gl.viewport(0, 0, auxB.w, auxB.h); gl.disable(gl.BLEND);
@@ -97,8 +104,8 @@ function render(dt) {
   useScene(cur.P.warpProg, cur, fbA.tex, bloom[1].tex); tri();
   if (old) { gl.enable(gl.BLEND); gl.blendColor(0, 0, 0, 1 - e); gl.blendFunc(gl.CONSTANT_ALPHA, gl.ONE_MINUS_CONSTANT_ALPHA); useScene(old.P.warpProg, old, fbA.tex, bloom[1].tex); tri(); }
   // 2. add this frame's sound
-  setBlend(cur); D.begin(asp, e); cur.P.draw(cur, sdt); D.end();
-  if (old) { setBlend(old); D.begin(asp, 1 - e); old.P.draw(old, sdt); D.end(); }
+  setBlend(cur); D.begin(asp, e); cur.P.draw(cur, sdt); D.end(); if (cur.P.agents) AGENTS.draw(cur, e);
+  if (old) { setBlend(old); D.begin(asp, 1 - e); old.P.draw(old, sdt); D.end(); if (old.P.agents) AGENTS.draw(old, 1 - e); }
   // 3. blur pyramid: bloom for the composite, and the soft copy the warp shaders read next frame
   gl.disable(gl.BLEND); gl.useProgram(downProg.p); gl.uniform1i(downProg.u.prev, 0);
   let src = fbB;

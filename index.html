@@ -143,6 +143,11 @@ body.nocursor, body.nocursor * { cursor: none; }
       <button id="bSpace" type="button" title="Change the space this scene is in (V)">Space: Flat</button>
     </div>
   </section>
+  <section>
+    <h3>Detail</h3>
+    <div class="btns" id="detailBtns"></div>
+    <p class="hint">How sharply the picture is rendered. Auto lowers itself if this computer struggles; the others stay fixed.</p>
+  </section>
   <section id="secScenes">
     <h3>Scenes</h3>
     <div class="btns">
@@ -151,11 +156,6 @@ body.nocursor, body.nocursor * { cursor: none; }
     </div>
     <p class="hint">Fav keeps a scene in the Favourites-only rotation. Hide removes it from Auto, Next and Prev.</p>
     <ul id="sceneList"></ul>
-  </section>
-  <section>
-    <h3>Detail</h3>
-    <div class="btns" id="detailBtns"></div>
-    <p class="hint">How sharply the picture is rendered. Auto lowers itself if this computer struggles; the others stay fixed.</p>
   </section>
   <section>
     <div class="btns"><button id="bReset" type="button">Reset all settings</button></div>
@@ -192,16 +192,15 @@ const VERT = `#version 300 es
 in vec2 pos; out vec2 uv;
 void main(){ uv = pos*.5+.5; gl_Position = vec4(pos,0.,1.); }`;
 
-// Shared by every warp and composite shader. p-space: y in [-1,1], x in [-aspect,aspect].
-const HEAD = `#version 300 es
-precision highp float; precision highp sampler2D;
-in vec2 uv; out vec4 o;
+// Shared by every warp, composite, simulation and agent shader. p-space: y in [-1,1], x in [-aspect,aspect].
+const LIB = `
 uniform sampler2D prev, blur, aud;
 uniform vec2 res; uniform float aspect;
 uniform float t, mt, bass, mid, treb, bassA, midA, trebA, beat, kick, vol, hue, bstep;
 uniform vec4 seed;
 uniform sampler2D velT, auxT; uniform float dt, ax, fit; uniform vec4 cam;
-uniform float spd, dkx; uniform int stage; uniform vec4 fly, look;
+uniform float spd, dkx, pano; uniform int stage; uniform vec4 fly, look;
+uniform sampler2D agentT; uniform vec4 u0, u1;                   // agent positions (scenes with agents), and two free vec4s each scene sets as it likes
 #define DK(x) pow(x, dkx)       // a per-frame fade, corrected for frame rate and the Trails setting
 #define PI 3.14159265
 #define TAU 6.2831853
@@ -222,7 +221,12 @@ vec3 P(vec2 p){ return texture(prev, toUv(p)).rgb; }
 vec3 B(vec2 p){ return texture(blur, toUv(p)).rgb; }
 vec2 V(vec2 p){ return texture(velT, toUv(p)).xy; }     // fluid velocity, p-units per second
 vec4 X(vec2 p){ return texture(auxT, toUv(p)); }        // ripple buffer: r = height, g = its rate of change
+vec2 dir(float a){ return vec2(cos(a),sin(a)); }
 `;
+const HEAD = `#version 300 es
+precision highp float; precision highp sampler2D;
+in vec2 uv; out vec4 o;
+` + LIB;
 const WARP_MAIN = `
 void main(){ vec2 p=(uv-.5)*2.*vec2(aspect,1.); vec3 c=warp(p);
   c = mix(c, vec3(lum(c)), smoothstep(3.,9.,lum(c))*.5);   // keep runaway highlights from clipping to flat colour
@@ -261,6 +265,8 @@ void main(){
       p=vec2(atan(d.x,-d.z), el)*4.*aspect/PI;                      // four mirrored copies around, so it closes without a seam
       hitT=2.; rd=vec3(0.,0.,-1.);
       camFade=smoothstep(1.5,1.1,abs(el));
+      if(pano>.5){                // panorama: two copies around instead of four, same scale up and down, for scenes with a horizon
+        p=vec2(atan(d.x,-d.z), el)*2.*aspect/PI; camFade=smoothstep(1.35,1.0,abs(el)); }
     } else {                      // floor: the picture is the ground we fly over, with a dim copy overhead
       vec3 o3=vec3(fly.x, .5, fly.y);
       hitT=d.y<0. ? o3.y/-d.y : 1.5/max(d.y,1e-4);
@@ -771,6 +777,73 @@ function camFit(S, asp) {
   return 1 + (Math.min(m, 3) - 1) * .5;
 }
 
+// ---------- Agents: many small things that move on their own, simulated on the GPU ----------
+// Each agent is one texel of a float texture: x, y, heading, and a fourth number the scene uses as it likes.
+// Every frame a scene's update shader moves each agent, reading the low-res buffer as a field (trails, crowd density);
+// then the agents are drawn as points back into that field, and into the picture. A scene asks for them with
+//   agents: { n, update, deposit, draw, seed }
+// update:  GLSL `vec4 agent(vec4 s, vec2 id)` returning the new state (id is the agent's own texel, handy as a random seed).
+// deposit: GLSL `void place(vec4 s, out vec2 p, out vec3 col, out float size)` for what each agent leaves in the field (size in field pixels).
+// draw:    the same, for what it draws into the picture (size in pixels at 1080p); leave it out to draw nothing.
+// seed(i, arr, o, aspect): fills arr[o..o+3] with the starting state of agent i; the default scatters them over the screen.
+const AGENTS = (() => {
+  if (!gl) return null;
+  const ok = !!gl.getExtension('EXT_color_buffer_float');       // 32-bit float targets: half floats are too coarse to hold a position
+  const VH = `#version 300 es
+precision highp float; precision highp int; precision highp sampler2D;
+` + LIB + `uniform ivec2 agSize; uniform float ptScale, agFade; out vec4 vc;
+void main(){ int id=gl_VertexID; vec4 s=texelFetch(agentT, ivec2(id%agSize.x, id/agSize.x), 0);
+  vec2 ps; vec3 col; float sz; place(s, ps, col, sz);
+  gl_Position=vec4(ps/vec2(aspect,1.),0.,1.); gl_PointSize=max(sz*ptScale,1.); vc=vec4(col*agFade,1.); }`;
+  const PF = `#version 300 es
+precision highp float; in vec4 vc; out vec4 o;
+void main(){ vec2 q=gl_PointCoord*2.-1.; float d=dot(q,q); if(d>1.) discard; o=vec4(vc.rgb*(1.-d*.6),1.); }`;
+  const UPD = `void main(){ vec4 s=texture(agentT, uv); o=agent(s, uv); }`;
+  const vao = gl.createVertexArray();
+  function ftarget(w, h) {
+    const tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, w, h, 0, gl.RGBA, gl.FLOAT, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    const fb = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+    return { tex, fb, w, h };
+  }
+  function setup(P) {           // compile once per scene
+    const a = P.agents, w = Math.ceil(Math.sqrt(a.n)), h = Math.ceil(a.n / w);
+    P.ag = { w, h, n: w * h, a: null, b: null, upd: program(VERT, HEAD + a.update + UPD),
+      dep: program(VH.replace('void main', a.deposit + '\nvoid main'), PF),
+      drw: a.draw ? program(VH.replace('void main', a.draw + '\nvoid main'), PF) : null };
+  }
+  function seed(S, asp) {       // fresh agents each time the scene starts
+    const P = S.P, g = P.ag;
+    if (!g.a) { g.a = ftarget(g.w, g.h); g.b = ftarget(g.w, g.h); }
+    const arr = new Float32Array(g.n * 4), f = P.agents.seed;
+    for (let i = 0; i < g.n; i++) { const o = i * 4; if (f) f(i, arr, o, asp); else { arr[o] = (Math.random() * 2 - 1) * asp; arr[o + 1] = Math.random() * 2 - 1; arr[o + 2] = Math.random() * 6.2831853; arr[o + 3] = Math.random(); } }
+    gl.bindTexture(gl.TEXTURE_2D, g.a.tex); gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, g.w, g.h, gl.RGBA, gl.FLOAT, arr);
+    S.agSeeded = true;
+  }
+  function points(prog, S, fade, scale, fb, w, h) {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb); gl.viewport(0, 0, w, h);
+    gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
+    useScene(prog, S, fbA.tex, bloom[1].tex);
+    gl.uniform2i(prog.u.agSize, S.P.ag.w, S.P.ag.h); gl.uniform1f(prog.u.ptScale, scale); gl.uniform1f(prog.u.agFade, fade);
+    gl.bindVertexArray(vao); gl.drawArrays(gl.POINTS, 0, S.P.ag.n); gl.bindVertexArray(null);
+  }
+  return {
+    ok, setup,
+    // Move every agent, then let them mark the field. Runs before the field's own simulation step.
+    step(S, asp) {
+      const g = S.P.ag; if (!S.agSeeded) seed(S, asp);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, g.b.fb); gl.viewport(0, 0, g.w, g.h); gl.disable(gl.BLEND);
+      useScene(g.upd, S, fbA.tex, bloom[1].tex); tri();
+      const t = g.a; g.a = g.b; g.b = t;
+      points(g.dep, S, 1, 1, auxA.fb, auxA.w, auxA.h);
+    },
+    draw(S, fade) { if (S.P.ag.drw) points(S.P.ag.drw, S, fade, H / 1080, fbB.fb, W, H); }
+  };
+})();
+
 // ---------- Scenes ----------
 // Each scene is three things: a warp shader (how last frame is bent before the new one is drawn on it),
 // a draw step (what the music adds this frame), and a composite shader (how the buffer becomes the picture).
@@ -960,7 +1033,7 @@ PRESETS.push({
 });
 
 PRESETS.push({
-  name: 'Neon Horizon', accent: '#ff3d9a',
+  name: 'Neon Horizon', accent: '#ff3d9a', panorama: true,     // in the dome, the sky is overhead and the ground below, so you can turn along the horizon
   warp: `vec3 warp(vec2 p){
     vec2 h=vec2(0.,.08);
     vec2 d=p-h; float z=.972-.03*kick-.006*(bassA-1.);
@@ -1443,6 +1516,412 @@ PRESETS.push({
   }
 });
 
+// ---------- 3.5 scenes, part 1: crowds of agents on the GPU ----------
+
+PRESETS.push({
+  name: 'Slime Mould', accent: '#a7f3d0', simSteps: 1,
+  // Physarum: a quarter of a million agents, each sniffing the trail ahead of it (left, centre, right), turning
+  // toward the strongest scent and laying more down as it goes. Veins and networks grow out of nothing but that.
+  // Music sets how far they sense, how sharply they turn and how fast they run; kicks scatter them, beats drop food.
+  agents: { n: 262144,
+    update: `vec4 agent(vec4 s, vec2 id){
+      vec2 p=s.xy; float h=s.z, k=s.w;
+      float sa=u0.y, sd=u0.z*(.7+.6*k), ta=u0.w;
+      float wl=X(p+sd*dir(h+sa)).r, wc=X(p+sd*dir(h)).r, wr=X(p+sd*dir(h-sa)).r;
+      float r=hash(id*vec2(91.3,57.1)+fract(t*.37)*vec2(13.,7.));
+      if(wc>wl && wc>wr) {} else if(wc<wl && wc<wr) h+=(r<.5?-ta:ta); else if(wl>wr) h+=ta; else if(wr>wl) h-=ta;
+      h+=(r-.5)*u1.y+(hash(id+fract(t))-.5)*u1.z;
+      p+=dir(h)*u1.x*dt*(.6+.8*k);
+      if(abs(p.x)>aspect){ p.x=clamp(p.x,-aspect,aspect); h=PI-h; }
+      if(abs(p.y)>1.){ p.y=clamp(p.y,-1.,1.); h=-h; }
+      return vec4(p,h,k); }`,
+    deposit: `void place(vec4 s, out vec2 p, out vec3 col, out float size){ p=s.xy; col=vec3(u1.w,0.,0.); size=1.; }`,
+    draw: `void place(vec4 s, out vec2 p, out vec3 col, out float size){ p=s.xy; col=pal(hue+s.w*.25+.1)*(.10+.12*s.w); size=1.6; }` },
+  sim: `vec4 sim(vec2 p){ vec2 e=vec2(ax,0.); float d=X(p).r*.4+(X(p+e.xy).r+X(p-e.xy).r+X(p+e.yx).r+X(p-e.yx).r)*.15; return vec4(d*u0.x,0.,0.,1.); }`,
+  warp: `vec3 warp(vec2 p){ return mix(P(p),B(p),.3)*DK(.80); }`,
+  comp: `vec3 comp(vec2 p){
+    float d=X(p).r; vec2 e=vec2(ax*1.5,0.);
+    vec2 g=vec2(X(p+e.xy).r-X(p-e.xy).r, X(p+e.yx).r-X(p-e.yx).r);
+    vec3 n=normalize(vec3(-g*2.5,1.));
+    float body=smoothstep(.03,1.1,d), core=smoothstep(1.8,5.,d);
+    vec3 c=mix(pal(hue+.55)*.05, pal(hue+.08+.10*d)*.8, body)*(.45+.9*max(dot(n,normalize(vec3(-.4,.6,.7))),0.));
+    c+=mix(pal(hue+.2), vec3(1.,.97,.9), core)*core*.7*(.8+.4*beat);              // the thickest veins glow white-hot
+    c+=pal(hue+.45)*.45*smoothstep(.005,.08,d)*(1.-body);                          // a faint halo where the search parties are
+    c+=P(p)*1.2+glow(p)*.5;
+    return c*vig(p); }`,
+  init(S) { S.scatter = 0; S.food = 6; },
+  update(S, dt) {
+    S.scatter = A.onKick ? Math.min(1.5, CFG.punch) * .6 : S.scatter * Math.max(0, 1 - dt * 6);
+    S.u0[0] = .962 - .01 * Math.min(2, A.trebA);                      // trail decay per step: treble clears the slate faster
+    S.u0[1] = .32 + .22 * Math.min(1.5, A.midA);                       // sensor angle
+    S.u0[2] = .05 + .035 * Math.min(2, A.bassA);                       // sensor distance: bass makes them look further ahead
+    S.u0[3] = .35 + .25 * Math.min(2, A.midA) + .5 * A.kick;           // turn angle
+    S.u1[0] = (.30 + .35 * Math.min(1.5, A.energy) + .9 * A.kick) * CFG.speed;   // speed, p-units per second
+    S.u1[1] = .04 + .10 * Math.min(2, A.trebA);                        // wander
+    S.u1[2] = S.scatter * 6.283;                                       // a kick throws every heading
+    S.u1[3] = .035;                                                    // trail laid per agent per frame
+  },
+  simDraw(S) {       // food: beats drop scent the agents converge on, and the first seconds get a few to start the network
+    const asp = D.aspect, food = (x, y, r, a) => D.sprite(x, y, r, 0, a, 0, 0, 1, 0, 0, .6, 1);
+    for (; S.food > 0; S.food--) food(rnd(-.8, .8) * asp, rnd(-.8, .8), .12, 1.5);
+    if (A.onKick) food(rnd(-.85, .85) * asp, rnd(-.85, .85), .08 + .06 * Math.min(2, A.bass), 2.5 * CFG.punch);
+    const a = S.mt * .25; food(Math.cos(a) * asp * .5, Math.sin(a * 1.3) * .5, .05, .25 * A.midA);
+  },
+  draw() {}
+});
+
+PRESETS.push({
+  name: 'Murmuration', accent: '#fdba74', simSteps: 1, cam: .6,
+  // A starling flock at dusk. Each bird reads the crowd around it from a low-res field the flock paints into:
+  // density (r) and summed heading (g,b). It lines up with its neighbours, drifts toward the thick of the flock,
+  // backs off when crowded, and the whole flock is drawn toward a point that wanders. Bass pulls it into a ball,
+  // treble frays the edges, a kick sends a shiver through every bird at once.
+  agents: { n: 16384,
+    update: `vec4 agent(vec4 s, vec2 id){
+      vec2 p=s.xy; float h=s.z, z=s.w;
+      vec4 f=X(p); vec2 e=vec2(.2,0.), e2=vec2(.022,0.);
+      vec2 gf=vec2(X(p+e.xy).r-X(p-e.xy).r, X(p+e.yx).r-X(p-e.yx).r);       // where the flock is, at range
+      vec2 gn=vec2(X(p+e2.xy).r-X(p-e2.xy).r, X(p+e2.yx).r-X(p-e2.yx).r);   // who is right next to me
+      vec2 v=dir(h), want=v*.6;
+      if(f.r>.02) want+=normalize(f.gb+1e-5)*u0.y;
+      want+=gf*u0.z-gn*3.*smoothstep(1.2,4.,f.r);
+      vec2 toA=u1.xy-p; float la=length(toA); want+=toA/max(la,1e-3)*u1.z*smoothstep(.05,.45,la);
+      float th=atan(want.y,want.x), d=mod(th-h+PI,TAU)-PI;
+      h+=clamp(d,-u1.w*dt,u1.w*dt);
+      float r=hash(id*vec2(71.3,37.1)+fract(t*.41)*vec2(11.,5.));
+      h+=(r-.5)*u0.w;
+      p+=dir(h)*u0.x*dt*(.85+.3*z);
+      if(abs(p.x)>aspect*1.05){ p.x=clamp(p.x,-aspect*1.05,aspect*1.05); h=PI-h; }
+      if(abs(p.y)>1.05){ p.y=clamp(p.y,-1.05,1.05); h=-h; }
+      return vec4(p,h,z); }`,
+    deposit: `void place(vec4 s, out vec2 p, out vec3 col, out float size){ p=s.xy; col=vec3(.06,dir(s.z)*.06); size=6.; }`,
+    draw: `void place(vec4 s, out vec2 p, out vec3 col, out float size){ p=s.xy; col=vec3(.35+.65*s.w); size=1.6+2.6*s.w; }` },
+  sim: `vec4 sim(vec2 p){ vec2 e=vec2(ax*2.,0.); vec4 f=X(p)*.2+(X(p+e.xy)+X(p-e.xy)+X(p+e.yx)+X(p-e.yx))*.2; return f*.62; }`,
+  warp: `vec3 warp(vec2 p){ return P(p)*DK(.5); }`,
+  comp: `vec3 comp(vec2 p){
+    float y=p.y, sx=.3*sin(mt*.05+seed.x*6.);
+    vec3 top=mix(vec3(.03,.03,.12), pal(hue+.6)*.2, .5), low=mix(vec3(.85,.35,.12), pal(hue+.1), .3);
+    vec3 sky=mix(low, top, smoothstep(-1.,.5,y));
+    float sd=length(vec2((p.x-sx)*.8, y+.78));
+    sky+=vec3(1.,.72,.38)*(exp(-sd*5.)*.55*(.6+.4*bassA)+smoothstep(.11,.095,sd)*1.3);     // the sun, almost down
+    sky+=vec3(.45,.22,.4)*fbm(p*vec2(1.2,3.)+vec2(mt*.02,0.))*smoothstep(-.7,.3,y)*.3;     // thin cloud
+    float birds=clamp(lum(P(p))*2.2,0.,1.), rim=smoothstep(.08,.6,lum(B(p)));
+    vec3 c=sky*(1.-birds*.92)+vec3(1.,.7,.45)*rim*.12*(.5+.5*beat);
+    return c*vig(p); }`,
+  init(S) { S.ax = 0; S.ay = 0; S.tx = 0; S.ty = 0; S.scatter = 0; },
+  update(S, dt) {
+    const asp = D.aspect;
+    if (A.onBeat && A.beats % 4 === 0 || Math.random() < dt * .08) { S.tx = rnd(-.55, .55) * asp; S.ty = rnd(-.45, .55); }
+    S.ax += (S.tx - S.ax) * Math.min(1, dt * .5); S.ay += (S.ty - S.ay) * Math.min(1, dt * .5);
+    S.scatter = A.onKick ? Math.min(1.5, CFG.punch) : S.scatter * Math.max(0, 1 - dt * 5);
+    S.u0[0] = (.32 + .22 * Math.min(1.5, A.energy)) * CFG.speed;       // airspeed
+    S.u0[1] = .9 + .5 * Math.min(1.5, A.midA);                          // alignment
+    S.u0[2] = 2.5 + 4.5 * Math.min(2, A.bassA);                          // cohesion: bass balls the flock up
+    S.u0[3] = .03 + .16 * Math.min(2, A.trebA) + 1.6 * S.scatter;       // fray and shiver
+    S.u1[0] = S.ax; S.u1[1] = S.ay; S.u1[2] = 1.3; S.u1[3] = 4.5 + 3 * S.scatter;
+  },
+  draw() {}
+});
+
+// ---------- 3.5 scenes, part 2: lightning, an oscilloscope, a fractal dive, a loom ----------
+
+PRESETS.push({
+  name: 'Lichtenberg', accent: '#c7d2fe',
+  // Lightning grown branch by branch in JS: each live tip steps forward with a jitter, leans toward its target,
+  // and sometimes splits. The channel it leaves glows in the buffer and fades. Kicks launch bolts from the sky,
+  // treble sends sprites crawling in from the sides, and when a bolt grounds the clouds light up.
+  warp: `vec3 warp(vec2 p){
+    vec2 q=p+vec2(.0008*sin(p.y*3.+mt*.3), -.0012);
+    vec3 c=mix(P(q), B(q), .22);
+    return hueRot(c,.004)*DK(.905); }`,
+  comp: `vec3 comp(vec2 p){
+    float fl=u0.x; vec2 fp=u0.yz;
+    float n=fbm(p*vec2(1.1,2.2)+vec2(mt*.03,seed.x*9.))*.7+fbm(p*vec2(3.,5.)+vec2(-mt*.05,seed.y*7.))*.3;
+    float cloud=smoothstep(.25,.75,n);
+    float lit=exp(-length(p-fp)*1.6)*fl;                                                  // the strike lights the cloud from where it is
+    vec3 sky=mix(vec3(.010,.012,.03), vec3(.05,.055,.09), cloud)*(1.+.6*bassA*cloud)*(1.-.5*smoothstep(-.2,1.,p.y)*(1.-cloud));
+    vec3 c=sky+mix(vec3(.6,.65,1.), pal(hue+.62), .4)*lit*(.5+.9*cloud)*1.6;
+    vec3 bolt=P(p); c+=bolt*1.6+glow(p)*1.4*mix(vec3(.7,.75,1.), pal(hue+.62), .4);
+    c+=vec3(.9,.92,1.)*fl*.08;                                                             // the whole sky flickers
+    return c*vig(p); }`,
+  init(S) { S.tips = []; S.flash = 0; S.fx = 0; S.fy = .3; S.pend = 0; },
+  spawn(S, x, y, tx, ty, w, life, h) { if (S.tips.length < 120) S.tips.push({ x, y, px: x, py: y, a: Math.atan2(ty - y, tx - x), tx, ty, w, life, h, age: 0 }); },
+  update(S, dt) {
+    const asp = D.aspect;
+    S.flash *= Math.max(0, 1 - dt * 7);
+    if (A.onKick) { const x = rnd(-.8, .8) * asp, n = 1 + (A.bass > 1.8 ? 1 : 0); for (let i = 0; i < n; i++) this.spawn(S, x + rnd(-.1, .1), 1.05, x + rnd(-.5, .5) * asp, rnd(-1.1, -.6), 1, 1, A.hue + rnd(-.05, .05)); }
+    if (Math.random() < dt * (.3 + 2.2 * Math.min(2, A.trebA))) { const sd = Math.random() < .5 ? -1 : 1; this.spawn(S, sd * asp * 1.02, rnd(-.6, .9), sd * asp * rnd(-.2, .5), rnd(-.9, .8), .35, .5, A.hue + .5); }
+    if (A.onBeat && Math.random() < .35) this.spawn(S, rnd(-.9, .9) * asp, rnd(-.3, .9), rnd(-.5, .5) * asp, -1.1, .55, .7, A.hue + .25);
+    S.u0[0] = S.flash; S.u0[1] = S.fx; S.u0[2] = S.fy;
+  },
+  draw(S, dt) {
+    const asp = D.aspect, step = (.045 + .03 * Math.min(2, A.trebA)) * (CFG.speed * .5 + .5), keep = [];
+    for (const t of S.tips) {
+      const n = Math.max(1, Math.round(dt * 60 * (t.w > .6 ? 2 : 1)));
+      for (let k = 0; k < n && t.life > 0; k++) {
+        const want = Math.atan2(t.ty - t.y, t.tx - t.x), d = Math.atan2(Math.sin(want - t.a), Math.cos(want - t.a));
+        t.a += d * .18 + rnd(-.7, .7) * (1.1 - .4 * t.w);
+        t.px = t.x; t.py = t.y; t.x += Math.cos(t.a) * step * (.6 + .5 * t.w); t.y += Math.sin(t.a) * step * (.6 + .5 * t.w); t.life -= .035; t.age++;
+        palJS(t.h, tmpC); const g = (1.6 + 2.2 * t.w) * (.6 + .4 * Math.min(2, A.trebA));
+        D.line(2, (i, u, p) => { p.x = i ? t.x : t.px; p.y = i ? t.y : t.py; p.r = tmpC.r * .5 + .5; p.g = tmpC.g * .5 + .5; p.b = tmpC.b * .4 + .6; }, { w: .0025 + .004 * t.w, gain: g, core: .5 + .5 * t.w });
+        if (Math.random() < .09 * (1 + A.trebA) && S.tips.length < 120 && t.w > .15) S.tips.push({ x: t.x, y: t.y, px: t.x, py: t.y, a: t.a + rnd(.4, 1.) * (Math.random() < .5 ? -1 : 1), tx: t.tx, ty: t.ty, w: t.w * .5, life: t.life * .6, h: t.h, age: 0 });
+        if (Math.hypot(t.x - t.tx, t.y - t.ty) < .08 || t.y < -1.05 || Math.abs(t.x) > asp * 1.1) {
+          if (t.w > .7) { S.flash = Math.max(S.flash, 1.2 * CFG.punch); S.fx = t.x; S.fy = Math.max(t.y, -.9); D.sprite(t.x, t.y, .25, 0, .8, .85, 1, 1.2, 0, 0, 1, 1); }
+          t.life = 0;
+        }
+      }
+      if (t.life > 0) keep.push(t);
+    }
+    S.tips = keep;
+  }
+});
+
+PRESETS.push({
+  name: 'Cathode', accent: '#4ade80',
+  // An oscilloscope in X-Y mode. The beam traces a Lissajous figure whose ratio changes every eight beats, and the
+  // waveform shakes the beam along the way. Green phosphor that lingers, scanlines, a curved tube, and a sync roll
+  // when the beat hits.
+  warp: `vec3 warp(vec2 p){
+    vec2 q=p; q.y+=u0.x; q.x+=.003*sin(p.y*40.+t*30.)*u0.y;              // the picture rolls and tears after a beat
+    vec3 c=mix(P(q), B(q), .12);
+    return c*vec3(.86,.93,.88)*DK(.86); }`,
+  comp: `vec3 comp(vec2 p){
+    vec2 q=p*(1.+.06*dot(p,p));                                            // the glass is curved
+    vec2 e=abs(q)/vec2(aspect,1.);
+    float tube=smoothstep(1.02,.96,max(e.x,e.y))*smoothstep(1.4,1.1,length(e*vec2(.8,1.)));
+    vec3 ph=vec3(.3,1.,.45);
+    float g=lum(P(q))*1.3+lum(B(q))*.9;
+    float scan=.78+.22*sin(q.y*res.y*1.4+t*2.), flick=.96+.04*sin(t*120.);
+    vec3 c=ph*g*scan*flick;
+    c+=ph*smoothstep(.3,2.5,g)*.4;                                          // the beam burns white at the core
+    vec2 gr=abs(fract(q*vec2(1./aspect,1.)*5.+.5)-.5);                     // the graticule
+    float grid=smoothstep(.03,.0,min(gr.x,gr.y))*.06+smoothstep(.015,.0,min(abs(q.x),abs(q.y)))*.08;
+    c+=ph*grid+vec3(.012,.03,.02);
+    return c*tube*vig(p*.6); }`,
+  init(S) { S.ra = 3; S.rb = 2; S.ph = 0; S.roll = 0; S.tear = 0; S.mark = -1; },
+  update(S, dt) {
+    if (A.onBeat && A.beats % 8 === 0 && A.beats !== S.mark) { S.mark = A.beats; const r = [[1, 2], [2, 3], [3, 4], [3, 2], [4, 5], [5, 4], [1, 3], [5, 6], [2, 5]][Math.floor(Math.random() * 9)]; S.ra = r[0]; S.rb = r[1]; }
+    if (A.onKick) { S.roll = .06 * Math.min(1.5, CFG.punch); S.tear = 1; }
+    S.roll *= Math.max(0, 1 - dt * 5); S.tear *= Math.max(0, 1 - dt * 6);
+    S.ph += dt * (.3 + .5 * Math.min(2, A.midA)) * CFG.speed;
+    S.u0[0] = S.roll; S.u0[1] = S.tear;
+  },
+  draw(S) {
+    const R = .72, a = S.ra, b = S.rb, ph = S.ph, amp = .05 + .12 * Math.min(2, A.bassA), g = .5 + .35 * Math.min(2, A.energy) + .4 * A.kick;
+    D.line(700, (i, u, p) => {
+      const th = u * TAU, w = sampleWave(u);
+      const x = Math.sin(a * th + ph) * R * Math.min(1.3, D.aspect * .8), y = Math.sin(b * th) * R;
+      const dx = a * Math.cos(a * th + ph), dy = b * Math.cos(b * th), l = Math.hypot(dx, dy) || 1;
+      p.x = x - dy / l * w * amp; p.y = y + dx / l * w * amp; p.r = .35; p.g = 1; p.b = .5;
+    }, { w: .006, closed: true, gain: g, core: .8 });
+    D.line(300, (i, u, p) => { const w = sampleWave(u), w2 = sampleWave((u + .25) % 1); p.x = w * .5 * D.aspect; p.y = w2 * .5; p.r = .3; p.g = 1; p.b = .45; }, { w: .004, gain: .35 * Math.min(2, A.trebA), core: .6 });
+  }
+});
+
+PRESETS.push({
+  name: 'Deep Field', accent: '#f9a8d4', cam: .25,
+  // A dive into the Mandelbrot set. The zoom runs on the song's energy, the colours on the spectrum, and when
+  // the numbers run out of precision the picture flashes white and the dive starts again somewhere else.
+  warp: `vec3 warp(vec2 p){ vec2 q=rot(u1.z)*p*u1.y; return P(q)*DK(.9); }`,
+  comp: `vec3 comp(vec2 p){
+    vec2 c0=u0.xy+rot(u1.w)*p*u0.z, z=vec2(0.);
+    float it=0., n=u1.x, mx=1e9;
+    for(int i=0;i<300;i++){ if(float(i)>=n) break;
+      z=vec2(z.x*z.x-z.y*z.y, 2.*z.x*z.y)+c0; mx=min(mx,abs(z.x*z.y));      // the orbit trap gives the inside some texture
+      if(dot(z,z)>64.){ it=float(i)+1.-log2(log2(dot(z,z)))+4.; break; } it=-1.; }
+    vec3 c;
+    if(it<0.) c=pal(hue+.55)*.06*smoothstep(1.,0.,mx*8.)+vec3(.004);
+    else { float k=it/n; float band=log2(it+2.)*1.3+bstep*.03+mt*.01;
+      c=pal(hue+band*.33)*(.3+.7*spec(fract(band*.17)))*smoothstep(.0,.05,k)*(.5+.5*smoothstep(.05,.4,k));
+      c=mix(c, vec3(1.), smoothstep(.7,1.,k)*.5);
+      c*=.55+.65*pow(fract(band*1.5),.6)*(.6+.5*beat); }
+    c=mix(c, P(p), .45)*(1.+.3*kick)+glow(p)*.5;
+    return mix(c, vec3(1.,.97,.95), u0.w)*vig(p); }`,
+  init(S) {
+    S.spots = [[-0.743643887037151, 0.131825904205330], [-1.25066, 0.02012], [-0.7453, 0.1127], [0.2549870375144766, -0.0005679790528465], [-1.768778833, -0.001738996], [-0.16070135, 1.0375665], [-0.77568377, 0.13646737], [-0.1011, 0.9563], [-1.99998588123, 0]];
+    S.si = Math.floor(Math.random() * S.spots.length); S.lg = 1.4; S.flash = 0; S.rot = Math.random() * TAU; S.resetting = false; S.rate = 0; S.u1[1] = 1;
+  },
+  update(S, dt) {
+    const want = (.25 + .3 * Math.min(1.5, A.energy) + .6 * A.kick) * CFG.speed;    // doublings per second
+    S.rate += (want - S.rate) * Math.min(1, dt * 3);
+    const d = S.rate * dt; S.lg -= d; S.rot += dt * .02 * (A.midA - .8) * CFG.speed;
+    if (S.lg < -13.3 && !S.resetting) S.resetting = true;
+    if (S.resetting) { S.flash = Math.min(1, S.flash + dt * 2.5); if (S.flash >= 1) { S.si = (S.si + 1 + Math.floor(Math.random() * (S.spots.length - 1))) % S.spots.length; S.lg = 1.4; S.resetting = false; } }
+    else S.flash = Math.max(0, S.flash - dt * 1.5);
+    if (A.onSwing && S.lg < -5 && !S.resetting) S.resetting = true;
+    const sp = S.spots[S.si], sc = Math.pow(2, S.lg);
+    S.u0[0] = sp[0]; S.u0[1] = sp[1]; S.u0[2] = sc; S.u0[3] = S.flash;
+    S.u1[0] = 120 + 110 * Math.min(1, -S.lg / 13); S.u1[1] = Math.pow(2, -d); S.u1[2] = -dt * .02 * (A.midA - .8) * CFG.speed; S.u1[3] = S.rot;
+  },
+  draw(S) {
+    const R = .18 + .04 * A.bassA + .07 * A.kick;
+    D.line(200, (i, u, p) => { const w = sampleWave(mirrorU(u)), a = u * TAU + S.mt * .2, r = R + w * .07; p.x = Math.cos(a) * r; p.y = Math.sin(a) * r; palJS(A.hue + u * .3 + .5, p, .5 + .5 * A.beat); }, { w: .006, closed: true, gain: .35 * Math.min(2, A.trebA) });
+  }
+});
+
+PRESETS.push({
+  name: 'Loom', accent: '#fcd34d',
+  // Cloth on a loom: vertical warp threads and horizontal weft, woven over and under. The music is painted into the
+  // buffer as colour, and the threads bend around whatever it painted; a third set of fine lines drifting across
+  // the weave makes moiré. Slow tracks suit it.
+  warp: `vec3 warp(vec2 p){
+    vec2 q=p+vec2(.0015*sin(p.y*2.+mt*.2), .0025+.003*bassA);
+    vec3 c=mix(P(q), B(q), .06);
+    return hueRot(c,.003)*DK(.975); }`,
+  comp: `
+  float thread(float x){ float f=abs(fract(x)-.5)*2.; return smoothstep(.9,.45,f); }
+  float shade(float x){ float f=fract(x)*2.-1.; return sqrt(max(1.-f*f,0.)); }
+  vec3 comp(vec2 p){
+    float n=u0.x;                                                                        // threads per unit
+    vec3 paint=P(p)*1.2+B(p)*.6; float lp=lum(paint);
+    vec2 bend=vec2(wav(p.y*.5+.5)*(.02+.05*midA)+lp*.03, wav(p.x/aspect*.5+.5)*(.015+.03*bassA)-lp*.03);
+    vec2 q=p+bend;
+    float wx=q.x*n, wy=q.y*n;
+    float over=step(.5, fract(floor(wx)*.5+floor(wy)*.5+.25));                           // which thread is on top at this crossing
+    float a=thread(wx), b=thread(wy), sa=shade(wx), sb=shade(wy);
+    vec3 cw=pal(hue+floor(wx)*.02+seed.x)*.5+paint*.9, cf=pal(hue+.5+floor(wy)*.025+seed.y)*.5+paint*.9;
+    float sa2=pow(sa,1.5), sb2=pow(sb,1.5);
+    vec3 c=mix(mix(vec3(.015,.01,.025), cf*sb2, b), cw*sa2, a*mix(1.-b*.9, 1., over));
+    float m=sin(dot(rot(u0.y)*q, vec2(n*TAU*.98,0.)))*.5+.5;                             // the moiré set
+    c*=.82+.3*pow(m,3.)*(.5+.5*trebA);
+    c+=glow(p)*.35*(a+b);
+    return c*vig(p); }`,
+  init(S) { S.rot = .03; },
+  update(S, dt) {
+    S.rot += dt * .012 * (.5 + A.midA) * CFG.speed;
+    S.u0[0] = 20 + 5 * Math.sin(S.mt * .07); S.u0[1] = .04 * Math.sin(S.rot) + .02;
+  },
+  draw(S) {
+    const asp = D.aspect;
+    for (let k = 0; k < 4; k++) {
+      const y0 = -.75 + k * .5 + .1 * Math.sin(S.mt * .17 + k), lv = [A.bassA, A.midA, A.trebA, A.midA][k], amp = .06 + .1 * lv;
+      D.line(180, (i, u, p) => { const w = sampleWave((u * .6 + k * .1) % 1); p.x = (u * 2 - 1) * asp; p.y = y0 + w * amp; palJS(A.hue + k * .12 + u * .2, p, .45 + .4 * lv); }, { w: .012, gain: .32, core: .3 });
+    }
+    if (A.onKick) { palJS(A.hue + .5, tmpC); D.sprite(rnd(-.7, .7) * asp, rnd(-.7, .7), .16 + .08 * A.bass, 0, tmpC.r, tmpC.g, tmpC.b, .9 * CFG.punch, 0, 0, .9, 1); }
+    for (let i = Math.floor(A.trebA * Math.random() * 1.5); i > 0; i--) { palJS(A.hue + rnd(0, .3), tmpC); D.sprite(rnd(-1, 1) * asp, rnd(-1, 1), rnd(.01, .03), 0, tmpC.r, tmpC.g, tmpC.b, .7, 0, 0, .9, 1); }
+  }
+});
+
+// ---------- Henry ----------
+// A painting rebuilt in shader: a triangle with a purple border, pink and yellow herringbone above, orange and
+// yellow stripes below, an orange diamond holding an eye with a googly pupil, and rows of green, blue and dark
+// green teeth around the diamond. Nothing here is the photo; every shape is drawn from scratch, so each part can
+// move on its own: the stripes crawl, the pupil rattles around like a real googly eye, the iris swirls on bass,
+// the lids blink, and as the song builds the triangle breathes, bends, and fills its corners with smaller Henrys.
+const HENRY_LIB = `
+const vec2 AP=vec2(0.,.93); const float BY=-.82, HW=1.02, DW=.72, DH=.50;
+const vec2 DC=vec2(0.,-.10), EC=vec2(0.,-.12);
+const vec3 PURPLE=vec3(.45,.10,.72), PINK=vec3(1.,.33,.55), YEL=vec3(1.,.88,.15), ORG=vec3(.96,.52,.25), ORG2=vec3(1.,.40,.10),
+  GRN=vec3(.50,.85,.38), BLU=vec3(.16,.47,.92), DKG=vec3(.08,.46,.34), TEAL=vec3(.15,.52,.68), WHT=vec3(.96), BLK=vec3(.02);
+float triSD(vec2 p){ vec2 n=normalize(vec2(AP.y-BY, HW)); return max(dot(vec2(abs(p.x),p.y)-AP, n), BY-p.y); }
+float alm(vec2 e, float w, float hu, float hl){                // 1 inside an almond: half-width w, height hu above, hl below
+  float xn=e.x/w; if(abs(xn)>=1.) return 0.;
+  float k=pow(1.-xn*xn,.65); return (e.y<hu*k && e.y>-hl*k) ? 1. : 0.; }
+float tooth(float s){ return 1.-abs(fract(s)*2.-1.); }
+vec3 teethCol(float s){ float i=mod(floor(s),3.); return i<.5?GRN:(i<1.5?BLU:DKG); }
+// The whole design at point p. Returns colour and coverage (1 inside the triangle).
+vec4 design(vec2 p){
+  float sd=triSD(p); if(sd>.01) return vec4(0.);
+  float cov=smoothstep(.01,-.004,sd);
+  float gx=u0.x, gy=u0.y, pr=u0.z, blink=u0.w, swirl=u1.x, s1=u1.w, s2=u1.w*.7;
+  vec3 c;
+  // stripes: herringbone above the diamond's middle, leaning stripes below
+  if(p.y>DC.y){ float tt=(abs(p.x)*.75+(AP.y-p.y))*7.+s1; c=fract(tt)<.5?PINK:YEL;
+    if(abs(p.x)<.013) c=fract(tt*.5)<.5?GRN:PINK; }
+  else { float tt=(abs(p.x)+(p.y-BY)*.28)*5.5+s2; c=fract(tt)<.5?ORG2:YEL; }
+  // the diamond, with its rows of teeth
+  float dd=abs(p.x-DC.x)/DW+abs(p.y-DC.y)/DH-1.;
+  if(dd<0.) c=ORG;
+  else if(dd<.2){ float s=p.x*5.+(p.y>DC.y?.5:0.); if(dd<.2*tooth(s)) c=teethCol(s); }
+  // the eye
+  vec2 e=p-EC; float op=1.-blink*.92;
+  if(alm(e,.65,.32*op+.03,.29*op+.03)>0.){
+    c=vec3(.12,.02,.14);
+    if(alm(e,.62,.295*op+.02,.265*op+.02)>0.) c=YEL;
+    if(alm(e,.59,.27*op+.01,.24*op+.01)>0.) c=PINK;
+    if(alm(e,.51,.21*op,.19*op)>0.){
+      float r=length(e), a=atan(e.y,e.x);
+      c=TEAL;
+      float streak=smoothstep(.55,.9,sin(a*9.+swirl+r*5.))*smoothstep(.16,.2,r)*smoothstep(.6,.3,r);
+      c=mix(c, GRN, streak);
+      vec2 td=(e-vec2(-.42,0.))/vec2(.08,.05); if(dot(td,td)<1.) c=YEL;      // the tear duct
+      if(r<.15){ c=WHT*smoothstep(.15,.135,r)+vec3(.55)*(1.-smoothstep(.15,.135,r)); // the googly: a white disc with a grey rim
+        vec2 g=e-vec2(gx,gy); float gr=length(g);
+        c=mix(c, BLK, smoothstep(pr+.004,pr-.004,gr));
+        c=mix(c, WHT, smoothstep(.02,.012,length(g-vec2(-.028,.03)))*.9); }
+    }
+  }
+  // the border
+  c=mix(c, PURPLE*(1.+.5*beat), smoothstep(-.075,-.06,sd));
+  return vec4(c*.85,cov); }
+`;
+
+PRESETS.push({
+  name: 'Henry', accent: '#ff5c8d', cam: .7,
+  warp: HENRY_LIB + `
+  vec3 warp(vec2 p){
+    float trip=u1.y;
+    float ex=.986-.022*kick-.005*(bassA-1.);
+    vec2 q=rot(.003*sin(mt*.3)+.010*(midA-1.)*trip)*p*ex;
+    q=mix(p,q,spd);
+    vec3 c=mix(P(q), B(q), .08);
+    vec4 d=design(p*(1.+.03*kick));
+    c+=d.rgb*d.a*(.05+.08*kick);                                       // the painting keeps stamping itself into the trail
+    return hueRot(c,.015+.03*trip)*DK(.95); }`,
+  comp: HENRY_LIB + `
+  vec2 sub(vec2 q, vec2 v){ return v+(q-v)*2.; }                        // the corner that holds a half-size Henry, mapped back to the full one
+  vec4 nested(vec2 q, float n, out float found){
+    found=0.; vec4 d=vec4(0.);
+    vec2 vs[3]=vec2[3](AP, vec2(-HW,BY), vec2(HW,BY));
+    for(int i=0;i<3;i++){ vec2 q2=sub(q, vs[i]); if(triSD(q2)<0.){ d=design(q2); found=1.; break; } }
+    return d; }
+  vec3 comp(vec2 p){
+    float trip=u1.y, nest=u1.z;
+    vec2 q=p*(1.+.025*sin(mt*.5)*trip)*(1.-.03*kick);
+    q+=(vec2(fbm(p*1.8+vec2(mt*.15,seed.x*7.)), fbm(p*1.8+vec2(seed.y*7.,-mt*.12)))-.5)*.22*trip*smoothstep(.2,1.,trip);
+    q=rot(.08*sin(mt*.21)*trip)*q;
+    vec4 d=design(q);
+    float f1, f2; vec4 d1=nested(q, nest, f1);
+    float n1=smoothstep(.0,.5,nest)*f1;
+    if(n1>0.){ vec2 vs[3]=vec2[3](AP, vec2(-HW,BY), vec2(HW,BY)); vec2 q1=q;
+      for(int i=0;i<3;i++){ vec2 t=sub(q,vs[i]); if(triSD(t)<0.){ q1=t; break; } }
+      vec4 d2=nested(q1, nest, f2); float n2=smoothstep(.5,1.,nest)*f2;
+      d1=mix(d1, d2, n2); }
+    d=mix(d, d1, n1);
+    vec3 trails=P(p)*1.25+glow(p)*.9;
+    vec3 c=mix(trails, d.rgb*(1.05+.15*beat), d.a);
+    c=hueRot(c, .35*sin(mt*.37)*trip*trip);
+    return c*vig(p); }`,
+  init(S) { S.gx = 0; S.gy = -.03; S.gvx = 0; S.gvy = 0; S.blink = 0; S.blinkT = 0; S.nextBlink = rnd(3, 7); S.trip = 0; S.nest = 0; S.s1 = 0; S.swirl = 0; },
+  update(S, dt) {
+    // the googly pupil: a loose disc on a spring, kicked by every beat, falling back down between them
+    if (A.onBeat) { const a = rnd(0, TAU), m = (.5 + .6 * Math.min(2, A.bass)) * CFG.punch; S.gvx += Math.cos(a) * m; S.gvy += Math.sin(a) * m; }
+    S.gvx += (-12 * S.gx - 1.6 * S.gvx) * dt; S.gvy += (-12 * S.gy - 1.6 * S.gvy - .7) * dt;
+    S.gx += S.gvx * dt; S.gy += S.gvy * dt;
+    const pr = .085 * (1 + .3 * Math.min(1.5, A.kick)), lim = .15 - pr - .004, r = Math.hypot(S.gx, S.gy);
+    if (r > lim) { const nx = S.gx / r, ny = S.gy / r; S.gx = nx * lim; S.gy = ny * lim; const vn = S.gvx * nx + S.gvy * ny; if (vn > 0) { S.gvx -= 1.7 * vn * nx; S.gvy -= 1.7 * vn * ny; } }
+    // blinks: now and then, and whenever the song changes gear
+    S.blinkT += dt;
+    if (S.blink <= 0 && (S.blinkT > S.nextBlink || A.onSwing)) { S.blink = 1e-3; S.blinkT = 0; S.nextBlink = rnd(4, 11); }
+    if (S.blink > 0) { S.blink += dt * 7; if (S.blink >= 2) S.blink = 0; }
+    const bl = S.blink > 0 ? 1 - Math.abs(S.blink - 1) : 0;
+    // how far gone it is: builds with the energy of the song over the first half minute, settles back in quiet parts
+    const want = Math.min(1, .08 + .5 * Math.min(1.5, A.energy) + .25 * A.kick) * Math.min(1, S.t / 25);
+    S.trip += (want - S.trip) * Math.min(1, dt * .6);
+    const nw = (A.beats % 32 >= 16 && S.trip > .35) ? 1 : 0; S.nest += (nw - S.nest) * Math.min(1, dt * .9);
+    S.s1 += dt * (.25 + .5 * Math.min(2, A.midA)) * CFG.speed; S.swirl += dt * (.3 + 1.2 * Math.max(0, A.bassA - .6)) * CFG.speed;
+    S.u0[0] = S.gx; S.u0[1] = S.gy; S.u0[2] = pr; S.u0[3] = bl;
+    S.u1[0] = S.swirl; S.u1[1] = S.trip; S.u1[2] = S.nest; S.u1[3] = S.s1;
+  },
+  draw(S) {
+    if (A.onKick) D.sprite(0, -.12, .17, 0, 1, .95, .9, .5 * CFG.punch, 0, .06, .05, 0);          // a ring of light off the eye
+    for (let i = Math.floor(A.trebA * Math.random() * 1.5); i > 0; i--) {                             // sparks off the border
+      const u = Math.random(), side = Math.floor(Math.random() * 3), ax = [0, -1.02, 1.02][side], ay = [.93, -.82, -.82][side], bx = [-1.02, 1.02, 0][side], by = [-.82, -.82, .93][side];
+      palJS(A.hue + rnd(0, .3), tmpC); D.sprite(ax + (bx - ax) * u, ay + (by - ay) * u, rnd(.015, .035), 0, tmpC.r, tmpC.g, tmpC.b, .8, 0, 0, .9, 1);
+    }
+  }
+});
+
 // ---------- Renderer ----------
 const $ = id => document.getElementById(id);
 const AUXH = 270;
@@ -1452,7 +1931,8 @@ const UNI = ['t', 'mt', 'bass', 'mid', 'treb', 'bassA', 'midA', 'trebA', 'beat',
 const DETAIL = [['Auto', 1080], ['720p', 720], ['1080p', 1080], ['1440p', 1440], ['Full', 4320]];
 // Which 3D spaces suit which scene (1 tunnel, 2 dome, 3 floor). Scenes not listed are either flat or already 3D.
 const SPACES = { 'Plasma Tide': [1, 2], 'Prism Cathedral': [2, 3], 'Aurora Veil': [2], 'Ink Bloom': [3], 'Solar Petals': [1], 'Julia Garden': [1, 2, 3], 'Silk Ribbons': [1],
-  'Velvet Smoke': [2], 'Oil Slick': [3], 'Acrylic Pour': [3], 'Glass Tide': [1], 'Pool Floor': [3], 'Quicksilver': [3], 'Petri': [2, 3], 'Maelstrom': [3, 1], 'Hall of Mirrors': [2] };
+  'Neon Horizon': [2], 'Velvet Smoke': [2], 'Oil Slick': [3], 'Acrylic Pour': [3], 'Glass Tide': [1], 'Pool Floor': [3], 'Quicksilver': [3], 'Petri': [2, 3], 'Maelstrom': [3, 1], 'Hall of Mirrors': [2],
+  'Slime Mould': [2, 3], 'Lichtenberg': [2], 'Cathode': [1], 'Deep Field': [1, 3], 'Loom': [1, 3], 'Henry': [2] };
 let downProg, upProg;
 
 function build() {
@@ -1460,6 +1940,7 @@ function build() {
   for (const P of PRESETS) {
     P.warpProg = program(VERT, HEAD + P.warp + WARP_MAIN); P.compProg = program(VERT, HEAD + COMP_LIB + P.comp + COMP_MAIN);
     if (P.sim) P.simProg = program(VERT, HEAD + P.sim + SIM_MAIN);
+    if (P.agents) AGENTS.setup(P);
     P.stages = SPACES[P.name] || [];
   }
 }
@@ -1489,10 +1970,12 @@ function useScene(prog, S, prevTex, blurTex) {
   gl.uniform1f(u.spd, CFG.speed * frn); gl.uniform1f(u.dkx, frn / CFG.trail);     // Speed and Trails reach every warp shader here
   gl.uniform4fv(u.cam, camFor(S)); gl.uniform1f(u.fit, camFit(S, W / H)); gl.uniform1i(u.stage, S.stage || 0); gl.uniform4fv(u.fly, flyFor(S, clock));
   gl.uniform4f(u.look, CFG.bright, CFG.sat, CFG.hueShift, CFG.glow);
+  gl.uniform1f(u.pano, S.P.panorama ? 1 : 0); gl.uniform4fv(u.u0, S.u0); gl.uniform4fv(u.u1, S.u1);
+  if (S.P.ag && S.P.ag.a) { bindTex(5, S.P.ag.a.tex); gl.uniform1i(u.agentT, 5); }
   for (const k of UNI) if (u[k]) gl.uniform1f(u[k], k === 't' ? S.t : k === 'mt' ? S.mt : A[k]);
 }
 function pickStage(P) { return CFG.spaces && CFG.cam > 0 && P.stages.length && Math.random() < .55 ? P.stages[Math.floor(Math.random() * P.stages.length)] : 0; }
-function makeState(P) { const S = { P, t: 0, mt: Math.random() * 60, seed: [Math.random(), Math.random(), Math.random(), Math.random()], stage: pickStage(P) }; if (P.init) P.init(S); return S; }
+function makeState(P) { const S = { P, t: 0, mt: Math.random() * 60, seed: [Math.random(), Math.random(), Math.random(), Math.random()], stage: pickStage(P), u0: new Float32Array(4), u1: new Float32Array(4) }; if (P.init) P.init(S); return S; }
 function label() {
   $('nameTxt').textContent = cur.P.name;
   $('nameSub').textContent = 'Scene ' + (cur.i + 1) + ' of ' + PRESETS.length + (cur.stage ? ' · ' + STAGES[cur.stage] : '');
@@ -1530,6 +2013,9 @@ function render(dt) {
   // 0. simulations the scenes lean on: fluid velocity, and the low-res buffer for ripples and growth
   const fs = cur.P.fluid ? cur : (old && old.P.fluid ? old : null);
   if (fs) FLUID.step(sdt, asp, fs.P.fluid, () => fs.P.force(fs, sdt));
+  for (const S of old ? [cur, old] : [cur]) if (S.P.update) S.P.update(S, sdt);     // per-frame bookkeeping a scene keeps in JS (sets u0/u1 for its shaders)
+  const as = cur.P.agents ? cur : (old && old.P.agents ? old : null);
+  if (as) AGENTS.step(as, asp);
   const ss = cur.P.sim ? cur : (old && old.P.sim ? old : null);
   if (ss) for (let i = 0, n = Math.max(1, Math.min(18, Math.round((ss.P.simSteps || 2) * CFG.speed))); i < n; i++) {
     gl.bindFramebuffer(gl.FRAMEBUFFER, auxB.fb); gl.viewport(0, 0, auxB.w, auxB.h); gl.disable(gl.BLEND);
@@ -1542,8 +2028,8 @@ function render(dt) {
   useScene(cur.P.warpProg, cur, fbA.tex, bloom[1].tex); tri();
   if (old) { gl.enable(gl.BLEND); gl.blendColor(0, 0, 0, 1 - e); gl.blendFunc(gl.CONSTANT_ALPHA, gl.ONE_MINUS_CONSTANT_ALPHA); useScene(old.P.warpProg, old, fbA.tex, bloom[1].tex); tri(); }
   // 2. add this frame's sound
-  setBlend(cur); D.begin(asp, e); cur.P.draw(cur, sdt); D.end();
-  if (old) { setBlend(old); D.begin(asp, 1 - e); old.P.draw(old, sdt); D.end(); }
+  setBlend(cur); D.begin(asp, e); cur.P.draw(cur, sdt); D.end(); if (cur.P.agents) AGENTS.draw(cur, e);
+  if (old) { setBlend(old); D.begin(asp, 1 - e); old.P.draw(old, sdt); D.end(); if (old.P.agents) AGENTS.draw(old, 1 - e); }
   // 3. blur pyramid: bloom for the composite, and the soft copy the warp shaders read next frame
   gl.disable(gl.BLEND); gl.useProgram(downProg.p); gl.uniform1i(downProg.u.prev, 0);
   let src = fbB;
@@ -1724,7 +2210,7 @@ if (!gl) {
   document.querySelector('.sources').hidden = true;
 } else {
   try {
-    if (!HDR) for (let i = PRESETS.length - 1; i >= 0; i--) if (PRESETS[i].fluid || PRESETS[i].sim) PRESETS.splice(i, 1);   // the simulations need float render targets
+    for (let i = PRESETS.length - 1; i >= 0; i--) if ((!HDR && (PRESETS[i].fluid || PRESETS[i].sim)) || (!AGENTS.ok && PRESETS[i].agents)) PRESETS.splice(i, 1);   // the simulations need float render targets
     build(); buildDash(); capH = DETAIL[CFG.detail][1]; resize();
     const p = pool(); go(p[Math.floor(Math.random() * p.length)], true); syncDash();
     last = performance.now(); requestAnimationFrame(tick);

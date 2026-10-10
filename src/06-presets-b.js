@@ -57,7 +57,7 @@ PRESETS.push({
 });
 
 PRESETS.push({
-  name: 'Neon Horizon', accent: '#ff3d9a',
+  name: 'Neon Horizon', accent: '#ff3d9a', panorama: true,     // in the dome, the sky is overhead and the ground below, so you can turn along the horizon
   warp: `vec3 warp(vec2 p){
     vec2 h=vec2(0.,.08);
     vec2 d=p-h; float z=.972-.03*kick-.006*(bassA-1.);

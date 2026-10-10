@@ -7,16 +7,15 @@ const VERT = `#version 300 es
 in vec2 pos; out vec2 uv;
 void main(){ uv = pos*.5+.5; gl_Position = vec4(pos,0.,1.); }`;
 
-// Shared by every warp and composite shader. p-space: y in [-1,1], x in [-aspect,aspect].
-const HEAD = `#version 300 es
-precision highp float; precision highp sampler2D;
-in vec2 uv; out vec4 o;
+// Shared by every warp, composite, simulation and agent shader. p-space: y in [-1,1], x in [-aspect,aspect].
+const LIB = `
 uniform sampler2D prev, blur, aud;
 uniform vec2 res; uniform float aspect;
 uniform float t, mt, bass, mid, treb, bassA, midA, trebA, beat, kick, vol, hue, bstep;
 uniform vec4 seed;
 uniform sampler2D velT, auxT; uniform float dt, ax, fit; uniform vec4 cam;
-uniform float spd, dkx; uniform int stage; uniform vec4 fly, look;
+uniform float spd, dkx, pano; uniform int stage; uniform vec4 fly, look;
+uniform sampler2D agentT; uniform vec4 u0, u1;                   // agent positions (scenes with agents), and two free vec4s each scene sets as it likes
 #define DK(x) pow(x, dkx)       // a per-frame fade, corrected for frame rate and the Trails setting
 #define PI 3.14159265
 #define TAU 6.2831853
@@ -37,7 +36,12 @@ vec3 P(vec2 p){ return texture(prev, toUv(p)).rgb; }
 vec3 B(vec2 p){ return texture(blur, toUv(p)).rgb; }
 vec2 V(vec2 p){ return texture(velT, toUv(p)).xy; }     // fluid velocity, p-units per second
 vec4 X(vec2 p){ return texture(auxT, toUv(p)); }        // ripple buffer: r = height, g = its rate of change
+vec2 dir(float a){ return vec2(cos(a),sin(a)); }
 `;
+const HEAD = `#version 300 es
+precision highp float; precision highp sampler2D;
+in vec2 uv; out vec4 o;
+` + LIB;
 const WARP_MAIN = `
 void main(){ vec2 p=(uv-.5)*2.*vec2(aspect,1.); vec3 c=warp(p);
   c = mix(c, vec3(lum(c)), smoothstep(3.,9.,lum(c))*.5);   // keep runaway highlights from clipping to flat colour
@@ -76,6 +80,8 @@ void main(){
       p=vec2(atan(d.x,-d.z), el)*4.*aspect/PI;                      // four mirrored copies around, so it closes without a seam
       hitT=2.; rd=vec3(0.,0.,-1.);
       camFade=smoothstep(1.5,1.1,abs(el));
+      if(pano>.5){                // panorama: two copies around instead of four, same scale up and down, for scenes with a horizon
+        p=vec2(atan(d.x,-d.z), el)*2.*aspect/PI; camFade=smoothstep(1.35,1.0,abs(el)); }
     } else {                      // floor: the picture is the ground we fly over, with a dim copy overhead
       vec3 o3=vec3(fly.x, .5, fly.y);
       hitT=d.y<0. ? o3.y/-d.y : 1.5/max(d.y,1e-4);

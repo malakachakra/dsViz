@@ -149,7 +149,7 @@ if (!gl) {
   document.querySelector('.sources').hidden = true;
 } else {
   try {
-    if (!HDR) for (let i = PRESETS.length - 1; i >= 0; i--) if (PRESETS[i].fluid || PRESETS[i].sim) PRESETS.splice(i, 1);   // the simulations need float render targets
+    for (let i = PRESETS.length - 1; i >= 0; i--) if ((!HDR && (PRESETS[i].fluid || PRESETS[i].sim)) || (!AGENTS.ok && PRESETS[i].agents)) PRESETS.splice(i, 1);   // the simulations need float render targets
     build(); buildDash(); capH = DETAIL[CFG.detail][1]; resize();
     const p = pool(); go(p[Math.floor(Math.random() * p.length)], true); syncDash();
     last = performance.now(); requestAnimationFrame(tick);
