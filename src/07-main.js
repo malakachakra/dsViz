@@ -9,6 +9,8 @@ const DETAIL = [['Auto', 1080], ['720p', 720], ['1080p', 1080], ['1440p', 1440],
 const SPACES = { 'Plasma Tide': [1, 2], 'Prism Cathedral': [2, 3], 'Aurora Veil': [2], 'Ink Bloom': [3], 'Solar Petals': [1], 'Julia Garden': [1, 2, 3], 'Silk Ribbons': [1],
   'Neon Horizon': [2], 'Velvet Smoke': [2], 'Oil Slick': [3], 'Acrylic Pour': [3], 'Glass Tide': [1], 'Pool Floor': [3], 'Quicksilver': [3], 'Petri': [2, 3], 'Maelstrom': [3, 1], 'Hall of Mirrors': [2],
   'Slime Mould': [2, 3], 'Lichtenberg': [2], 'Cathode': [1], 'Deep Field': [1, 3], 'Loom': [1, 3], 'Henry': [2], 'Henry Deux': [2], 'Henry 3': [2, 3] };
+// What a scene is called in the address bar: its name in kebab-case, except the Henrys, which go by the triangle.
+const SLUGS = { 'Henry': 'Δ', 'Henry Deux': 'Δ2', 'Henry 3': 'Δ3' };
 let downProg, upProg;
 
 function build() {
@@ -18,6 +20,7 @@ function build() {
     if (P.sim) P.simProg = program(VERT, HEAD + P.sim + SIM_MAIN);
     if (P.agents) AGENTS.setup(P);
     P.stages = SPACES[P.name] || [];
+    P.slug = SLUGS[P.name] || P.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
   }
 }
 function resize() {
@@ -56,6 +59,20 @@ function label() {
   $('nameTxt').textContent = cur.P.name;
   $('nameSub').textContent = 'Scene ' + (cur.i + 1) + ' of ' + PRESETS.length + (cur.stage ? ' · ' + STAGES[cur.stage] : '');
   const g = $('spaceBtns'); if (g) [...g.children].forEach((b, i) => { b.disabled = i > 0 && !cur.P.stages.includes(i); b.setAttribute('aria-pressed', String((cur.stage || 0) === i)); });
+  setHash();
+}
+// The address follows the scene (#slug, or #slug/space), so a copied link opens dsViz right there. replaceState keeps Back working.
+function setHash() {
+  const h = '#' + cur.P.slug + (cur.stage ? '/' + STAGES[cur.stage].toLowerCase() : '');
+  try { history.replaceState(null, '', h); } catch (e) { try { location.replace(h); } catch (e2) {} }
+}
+function fromHash() {
+  let s; try { s = decodeURIComponent(location.hash.slice(1)); } catch (e) { return null; }
+  if (!s) return null;
+  const [name, space] = s.split('/'), i = PRESETS.findIndex(p => p.slug === name);
+  if (i < 0) return null;
+  const st = space ? STAGES.findIndex(n => n.toLowerCase() === space.toLowerCase()) : 0;
+  return { i, stage: st > 0 && PRESETS[i].stages.includes(st) ? st : 0 };
 }
 function go(i, instant) {
   i = (i + PRESETS.length) % PRESETS.length;
@@ -133,4 +150,4 @@ function tick(now) {
   frameMs += (raw * 1000 - frameMs) * .05;
   if (CFG.detail === 0 && frameMs > 23 && raw < .2) { if (++slow > 150 && capH > 540) { capH = Math.round(capH * .8); slow = 0; frameMs = 16; } } else slow = Math.max(0, slow - 2);
 }
-function setDetail(i) { CFG.detail = (i + DETAIL.length) % DETAIL.length; capH = DETAIL[CFG.detail][1]; slow = 0; frameMs = 16; saveCfg(); }
+function setDetail(i) { CFG.detail = (i + DETAIL.length) % DETAIL.length; capH = CFG.detail === 0 ? AUTO_CAP : DETAIL[CFG.detail][1]; slow = 0; frameMs = 16; saveCfg(); }

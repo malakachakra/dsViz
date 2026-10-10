@@ -20,7 +20,7 @@ Open `index.html` in Chrome or Edge on a computer, then choose where the music c
 - **Microphone.** Listens to the room. Pick which microphone under Settings.
 - **Demo beat.** A built-in loop, to see how it reacts.
 
-It needs a browser with WebGL2, and is built for desktop Chrome and Edge.
+It needs a browser with WebGL2, and is built for desktop Chrome and Edge. On a phone, choose Microphone or audio files (phones cannot capture another app's audio); swipe across the picture to change scene, and Settings is the tab on the left edge.
 
 ## Controls
 
@@ -41,6 +41,8 @@ The control strip appears when you move the mouse and fades when you stop.
 | S | Change the audio source |
 | Esc | Close Settings or the source card |
 
+The address follows the scene, so a link opens dsViz right there: `#Δ` is Henry, `#Δ/dome` is Henry in the dome, `#Δ2` and `#Δ3` are the other Henrys, and every other scene goes by its name (`#slime-mould`, `#hall-of-mirrors`). Copy link under Settings copies the address; on a phone it opens the share sheet.
+
 ## Settings
 
 The Settings drawer (D) holds everything adjustable. Settings are saved in the browser, per address.
@@ -50,7 +52,7 @@ The Settings drawer (D) holds everything adjustable. Settings are saved in the b
 - **Picture:** Brightness, Trails, Glow, Saturation, Colour shift, with their own Random and Default.
 - **Camera:** how far it moves, whether scenes may wrap into 3D spaces (tunnel, dome, floor), and which space the current scene is in.
 - **Detail:** how sharply the picture is rendered. Auto lowers itself if the computer struggles.
-- **Scenes:** time per scene, crossfade length, and Fav and Hide for each scene. Reset all settings keeps the Fav and Hide lists; Clear Fav and Hide empties them.
+- **Scenes:** time per scene, crossfade length, Copy link, and Fav and Hide for each scene. Reset all settings keeps the Fav and Hide lists; Clear Fav and Hide empties them.
 
 ## Scenes
 

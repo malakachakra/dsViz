@@ -3,6 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#05040a">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHBhdGggZD0iTTMyIDNMNjIgNTlIMnoiIGZpbGw9IiM2ZDFmYjAiIHN0cm9rZT0iI2ZmNWZhMiIgc3Ryb2tlLXdpZHRoPSIzIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+PHBhdGggZD0iTTE0IDQxcTE4LTE2IDM2IDBxLTE4IDE2LTM2IDB6IiBmaWxsPSIjMmE4ZmI4Ii8+PGNpcmNsZSBjeD0iMzIiIGN5PSI0MSIgcj0iNy41IiBmaWxsPSIjZjRmMWZmIi8+PGNpcmNsZSBjeD0iMzMiIGN5PSI0MiIgcj0iNCIgZmlsbD0iIzExMSIvPjwvc3ZnPg==">
 <title>dsViz</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Syne:wght@600;800&family=DM+Mono:wght@400;500&display=swap">
 <style>
@@ -22,7 +27,7 @@
 *, *::before, *::after { box-sizing: border-box; }
 html, body { height: 100%; }
 body { background: var(--bg); color: var(--ink); font-family: var(--mono); font-size: 13px; overflow: hidden; }
-#c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+#c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
 button, input, select { font: inherit; color: inherit; }
 button { cursor: pointer; background: none; border: 1px solid var(--line); border-radius: 999px; padding: 7px 13px; transition: background .15s, border-color .15s, color .15s; }
 button:hover { background: rgba(244, 241, 255, .12); border-color: var(--dim); }
@@ -47,6 +52,10 @@ label.pick input { position: absolute; opacity: 0; width: 1px; height: 1px; }
 
 #hud { position: fixed; left: 0; right: 0; bottom: 0; padding: 14px 16px calc(14px + env(safe-area-inset-bottom, 0px)); display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; background: linear-gradient(to top, rgba(5, 4, 10, .78), rgba(5, 4, 10, 0)); transition: opacity .5s; }
 #hud.idle { opacity: 0; pointer-events: none; }
+/* On phones, Settings is a tab on the left edge that fades with the strip */
+#tab { display: none; z-index: 2; position: fixed; left: 0; top: 50%; transform: translateY(-50%); writing-mode: vertical-rl; padding: 14px 8px; border: 1px solid var(--line); border-left: 0; border-radius: 0 12px 12px 0; background: var(--glass); backdrop-filter: blur(22px) saturate(1.4); -webkit-backdrop-filter: blur(22px) saturate(1.4); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; transition: opacity .5s; }
+#tab.idle { opacity: 0; pointer-events: none; }
+body.dash-open #tab { display: none; }
 body.dash-open #hud { right: var(--dash); }
 #name { font-family: var(--display); font-weight: 600; font-size: 18px; letter-spacing: -.01em; min-width: 0; margin-right: auto; overflow-wrap: anywhere; }
 #name small { display: block; font-family: var(--mono); font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--dim); font-weight: 400; }
@@ -88,7 +97,12 @@ select option { background: #15111f; }
 #sceneList .tg { padding: 3px 9px; font-size: 11px; }
 #drop { position: fixed; inset: 12px; border: 2px dashed var(--accent); border-radius: 20px; display: grid; place-items: center; font-family: var(--display); font-size: 28px; font-weight: 800; background: rgba(5, 4, 10, .6); pointer-events: none; }
 body.nocursor, body.nocursor * { cursor: none; }
-@media (max-width: 640px) { body.dash-open #hud { display: none; } }
+@media (max-width: 640px) {
+  #hud .grp { flex-basis: 100%; }                 /* the name and meters on one row, the pills on the next */
+  #bDash, #bFull { display: none; }               /* Settings lives on the tab; phones mostly cannot go fullscreen */
+  #tab { display: block; }
+}
+@media (max-width: 640px), ((max-width: 960px) and (max-height: 500px)) { body.dash-open #hud { display: none; } }
 @media (prefers-reduced-motion: reduce) { #hud, button, #dash, #dash.open { transition: none; } }
 </style>
 <style>body{margin:0}[hidden]{display:none!important}</style>
@@ -127,6 +141,7 @@ body.nocursor, body.nocursor * { cursor: none; }
     <button id="bFull" type="button" title="Fullscreen (F)">Fullscreen</button>
   </div>
 </div>
+<button id="tab" type="button" hidden title="Open settings">Settings</button>
 
 <aside id="dash" aria-label="Settings">
   <header><h2>Settings</h2><button id="dashClose" type="button">Close</button></header>
@@ -144,7 +159,7 @@ body.nocursor, body.nocursor * { cursor: none; }
       <button id="bSpaces" type="button" aria-pressed="true" title="Let scenes wrap into tunnels, domes and floors you fly through">3D spaces</button>
     </div>
     <div class="btns" id="spaceBtns"></div>
-    <p class="hint">Where this scene is shown right now. V cycles the spaces that suit it; the others are greyed.</p>
+    <p class="hint">Where this scene is shown right now. Spaces that do not suit it are greyed.</p>
   </section>
   <section>
     <h3>Detail</h3>
@@ -156,8 +171,9 @@ body.nocursor, body.nocursor * { cursor: none; }
     <div class="btns">
       <button id="bAuto2" type="button" aria-pressed="true">Change automatically</button>
       <button id="bFavOnly" type="button" aria-pressed="false">Favourites only</button>
+      <button id="bLink" type="button" title="Copy a link that opens on this scene, in this space">Copy link</button>
     </div>
-    <p class="hint">Fav keeps a scene in the Favourites-only rotation. Hide removes it from Auto, Next and Prev.</p>
+    <p class="hint">Fav keeps a scene in the Favourites-only rotation. Hide removes it from Auto, Next and Prev. Copy link copies an address that opens on this scene.</p>
     <ul id="sceneList"></ul>
   </section>
   <section>
@@ -170,6 +186,9 @@ body.nocursor, body.nocursor * { cursor: none; }
 (() => {
 "use strict";
 // ---------- Settings: one object every part of the visualizer reads, remembered between sessions ----------
+// What kind of screen this is: a phone gets the touch layout and starts lighter.
+const TOUCH = !!(window.matchMedia && matchMedia('(pointer: coarse)').matches);
+const AUTO_CAP = TOUCH && Math.min(screen.width, screen.height) < 900 ? 720 : 1080;   // where Auto detail starts
 const DEFAULTS = {
   intensity: 1, speed: 1, punch: 1, bass: 1, mid: 1, treb: 1,          // music
   bright: 1, trail: 1, glow: 1, hueShift: 0, sat: 1,                  // picture
@@ -2157,6 +2176,8 @@ const DETAIL = [['Auto', 1080], ['720p', 720], ['1080p', 1080], ['1440p', 1440],
 const SPACES = { 'Plasma Tide': [1, 2], 'Prism Cathedral': [2, 3], 'Aurora Veil': [2], 'Ink Bloom': [3], 'Solar Petals': [1], 'Julia Garden': [1, 2, 3], 'Silk Ribbons': [1],
   'Neon Horizon': [2], 'Velvet Smoke': [2], 'Oil Slick': [3], 'Acrylic Pour': [3], 'Glass Tide': [1], 'Pool Floor': [3], 'Quicksilver': [3], 'Petri': [2, 3], 'Maelstrom': [3, 1], 'Hall of Mirrors': [2],
   'Slime Mould': [2, 3], 'Lichtenberg': [2], 'Cathode': [1], 'Deep Field': [1, 3], 'Loom': [1, 3], 'Henry': [2], 'Henry Deux': [2], 'Henry 3': [2, 3] };
+// What a scene is called in the address bar: its name in kebab-case, except the Henrys, which go by the triangle.
+const SLUGS = { 'Henry': 'Δ', 'Henry Deux': 'Δ2', 'Henry 3': 'Δ3' };
 let downProg, upProg;
 
 function build() {
@@ -2166,6 +2187,7 @@ function build() {
     if (P.sim) P.simProg = program(VERT, HEAD + P.sim + SIM_MAIN);
     if (P.agents) AGENTS.setup(P);
     P.stages = SPACES[P.name] || [];
+    P.slug = SLUGS[P.name] || P.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
   }
 }
 function resize() {
@@ -2204,6 +2226,20 @@ function label() {
   $('nameTxt').textContent = cur.P.name;
   $('nameSub').textContent = 'Scene ' + (cur.i + 1) + ' of ' + PRESETS.length + (cur.stage ? ' · ' + STAGES[cur.stage] : '');
   const g = $('spaceBtns'); if (g) [...g.children].forEach((b, i) => { b.disabled = i > 0 && !cur.P.stages.includes(i); b.setAttribute('aria-pressed', String((cur.stage || 0) === i)); });
+  setHash();
+}
+// The address follows the scene (#slug, or #slug/space), so a copied link opens dsViz right there. replaceState keeps Back working.
+function setHash() {
+  const h = '#' + cur.P.slug + (cur.stage ? '/' + STAGES[cur.stage].toLowerCase() : '');
+  try { history.replaceState(null, '', h); } catch (e) { try { location.replace(h); } catch (e2) {} }
+}
+function fromHash() {
+  let s; try { s = decodeURIComponent(location.hash.slice(1)); } catch (e) { return null; }
+  if (!s) return null;
+  const [name, space] = s.split('/'), i = PRESETS.findIndex(p => p.slug === name);
+  if (i < 0) return null;
+  const st = space ? STAGES.findIndex(n => n.toLowerCase() === space.toLowerCase()) : 0;
+  return { i, stage: st > 0 && PRESETS[i].stages.includes(st) ? st : 0 };
 }
 function go(i, instant) {
   i = (i + PRESETS.length) % PRESETS.length;
@@ -2281,17 +2317,17 @@ function tick(now) {
   frameMs += (raw * 1000 - frameMs) * .05;
   if (CFG.detail === 0 && frameMs > 23 && raw < .2) { if (++slow > 150 && capH > 540) { capH = Math.round(capH * .8); slow = 0; frameMs = 16; } } else slow = Math.max(0, slow - 2);
 }
-function setDetail(i) { CFG.detail = (i + DETAIL.length) % DETAIL.length; capH = DETAIL[CFG.detail][1]; slow = 0; frameMs = 16; saveCfg(); }
+function setDetail(i) { CFG.detail = (i + DETAIL.length) % DETAIL.length; capH = CFG.detail === 0 ? AUTO_CAP : DETAIL[CFG.detail][1]; slow = 0; frameMs = 16; saveCfg(); }
 
 // ---------- Controls ----------
-const startEl = $('start'), hud = $('hud'), msg = $('msg'), dash = $('dash');
-let idleTimer = 0, wake = null, uiClock = 0;
+const startEl = $('start'), hud = $('hud'), msg = $('msg'), dash = $('dash'), tab = $('tab');
+let idleTimer = 0, wake = null, uiClock = 0, hinted = false;
 function say(text) { msg.textContent = text || ''; }
-function showStart(text) { startEl.hidden = false; hud.hidden = true; $('startClose').hidden = !A.live; say(text); }
-function hideStart() { startEl.hidden = true; hud.hidden = false; poke(); }
+function showStart(text) { startEl.hidden = false; hud.hidden = true; tab.hidden = true; $('startClose').hidden = !A.live; say(text); }
+function hideStart() { startEl.hidden = true; hud.hidden = false; tab.hidden = false; poke(); }
 function poke() {
-  hud.classList.remove('idle'); document.body.classList.remove('nocursor'); clearTimeout(idleTimer);
-  idleTimer = setTimeout(() => { if (startEl.hidden && !dash.classList.contains('open') && !hud.matches(':hover') && !hud.contains(document.activeElement)) { hud.classList.add('idle'); document.body.classList.add('nocursor'); } }, 2800);
+  hud.classList.remove('idle'); tab.classList.remove('idle'); document.body.classList.remove('nocursor'); clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => { if (startEl.hidden && !dash.classList.contains('open') && (TOUCH || !hud.matches(':hover')) && !hud.contains(document.activeElement)) { hud.classList.add('idle'); tab.classList.add('idle'); document.body.classList.add('nocursor'); } }, 2800);   // a tap leaves a phone "hovering", so only a mouse holds the strip up
 }
 function explain(err) {
   if (err && (err.name === 'NotAllowedError' || err.name === 'SecurityError')) return 'Audio capture was declined or is blocked on this page. Open the downloaded file in Chrome or Edge to capture a tab, or play audio files here.';
@@ -2301,10 +2337,11 @@ function explain(err) {
 async function choose(fn) {
   say('');
   try {
-    const label = await fn();
+    const got = await fn();
     $('player').hidden = srcNode !== playerNode || !playerNode; started = true; hideStart(); syncSource();
+    if (TOUCH && !hinted) { hinted = true; $('nameSub').textContent = 'Swipe for the next scene'; setTimeout(() => { if (cur) label(); }, 7000); }   // once, on a touch screen
     if (navigator.wakeLock && !wake) navigator.wakeLock.request('screen').then(w => { wake = w; w.addEventListener('release', () => { wake = null; }); }).catch(() => {});
-    return label;
+    return got;
   } catch (err) { if (!(err && err.name === 'AbortError')) { if (startEl.hidden) showStart(explain(err)); else say(explain(err)); } }
 }
 $('srcTab').onclick = () => choose(useTab);
@@ -2320,12 +2357,21 @@ $('bSrc').onclick = () => showStart('');
 $('startClose').onclick = hideStart;
 $('bFull').onclick = fullscreen;
 $('bDash').onclick = () => setDash(!dash.classList.contains('open'));
+$('tab').onclick = () => setDash(true);
+$('bLink').onclick = copyLink;
 $('dashClose').onclick = () => setDash(false);
 $('bSpaces').onclick = () => { CFG.spaces = !CFG.spaces; if (!CFG.spaces && cur.stage) cur.stage = 0; syncDash(); saveCfg(); };
 $('bFavOnly').onclick = () => { CFG.favOnly = !CFG.favOnly; syncDash(); saveCfg(); };
 $('bReset').onclick = () => { const keep = { fav: CFG.fav, hide: CFG.hide, micId: CFG.micId }; Object.assign(CFG, JSON.parse(JSON.stringify(DEFAULTS)), keep); setDetail(CFG.detail); syncDash(); saveCfg(); };   // the scene lists survive a reset
 $('bClear').onclick = () => { CFG.fav = {}; CFG.hide = {}; syncDash(); saveCfg(); };
 $('micPick').onchange = e => { CFG.micId = e.target.value; saveCfg(); choose(useMic); };
+// Copy link: the address already names the scene and its space, so the link opens dsViz right there. Phones get the share sheet.
+async function copyLink() {
+  const b = $('bLink'), url = location.href;
+  if (TOUCH && navigator.share) { try { await navigator.share({ title: 'dsViz', url }); } catch (e) {} return; }
+  try { await navigator.clipboard.writeText(url); b.textContent = 'Copied'; setTimeout(() => { b.textContent = 'Copy link'; }, 1500); }
+  catch (e) { window.prompt('Copy this link', url); }
+}
 function setAuto(v) { CFG.auto = v; sinceSwitch = 0; syncDash(); saveCfg(); }
 function setStage(i) { if (i && !cur.P.stages.includes(i)) return; cur.stage = i; label(); }
 // Random and Default for one section of the drawer. Random stays inside each slider's own band (the last column of ROWS).
@@ -2411,6 +2457,13 @@ function meters(dt) {
 }
 ['pointermove', 'pointerdown', 'keydown', 'touchstart'].forEach(ev => window.addEventListener(ev, poke, { passive: true }));
 canvas.addEventListener('dblclick', fullscreen);
+// A swipe across the picture changes scene (a mouse drag does the same).
+let swX = 0, swY = 0, swOn = false;
+canvas.addEventListener('pointerdown', e => { swX = e.clientX; swY = e.clientY; swOn = true; });
+canvas.addEventListener('pointerup', e => { if (!swOn) return; swOn = false; const dx = e.clientX - swX, dy = e.clientY - swY; if (Math.abs(dx) > 50 && Math.abs(dx) > 2 * Math.abs(dy) && startEl.hidden) step(dx < 0 ? 1 : -1); });
+canvas.addEventListener('pointercancel', () => { swOn = false; });
+// Someone edited the address: follow it.
+window.addEventListener('hashchange', () => { const h = fromHash(); if (h && cur && (h.i !== cur.i || h.stage !== (cur.stage || 0))) { go(h.i, true); cur.stage = h.stage; label(); } });
 window.addEventListener('keydown', e => {
   const tag = e.target && e.target.tagName;
   if (tag === 'SELECT' || (tag === 'INPUT' && e.target.type !== 'file')) { if (e.key === 'Escape') e.target.blur(); return; }
@@ -2437,14 +2490,19 @@ window.addEventListener('dragover', e => e.preventDefault());
 window.addEventListener('drop', e => { e.preventDefault(); dragDepth = 0; $('drop').hidden = true; const f = e.dataTransfer && e.dataTransfer.files; if (f && f.length) choose(async () => useFiles(f)); });
 
 // ---------- Boot ----------
+// Phones cannot capture another app's audio, so the microphone leads there; iPhones have no fullscreen either.
+if (!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia)) { $('srcTab').hidden = true; const m = $('srcMic'); m.classList.add('main'); m.querySelector('small').textContent = 'Listens to the room. Play the music on a speaker nearby.'; m.parentNode.prepend(m); }
+if (!document.documentElement.requestFullscreen) $('bFull').hidden = true;
 if (!gl) {
   say('This browser has no WebGL2, which the visualizer needs. A current Chrome, Edge or Firefox will run it.');
   document.querySelector('.sources').hidden = true;
 } else {
   try {
     for (let i = PRESETS.length - 1; i >= 0; i--) if ((!HDR && (PRESETS[i].fluid || PRESETS[i].sim)) || (!AGENTS.ok && PRESETS[i].agents)) PRESETS.splice(i, 1);   // the simulations need float render targets
-    build(); buildDash(); capH = DETAIL[CFG.detail][1]; resize();
-    const p = pool(); go(p[Math.floor(Math.random() * p.length)], true); syncDash();
+    build(); buildDash(); capH = CFG.detail === 0 ? AUTO_CAP : DETAIL[CFG.detail][1]; resize();
+    const h = fromHash(), p = pool();                                                   // a link that names a scene opens on it
+    if (h) { go(h.i, true); cur.stage = h.stage; label(); } else go(p[Math.floor(Math.random() * p.length)], true);
+    syncDash();
     last = performance.now(); requestAnimationFrame(tick);
   } catch (err) { console.error(err); say('The graphics setup failed on this device: ' + err.message); }
   canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); showStart('The graphics context was lost. Reload the page to restart.'); });

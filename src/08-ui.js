@@ -1,12 +1,12 @@
 // ---------- Controls ----------
-const startEl = $('start'), hud = $('hud'), msg = $('msg'), dash = $('dash');
-let idleTimer = 0, wake = null, uiClock = 0;
+const startEl = $('start'), hud = $('hud'), msg = $('msg'), dash = $('dash'), tab = $('tab');
+let idleTimer = 0, wake = null, uiClock = 0, hinted = false;
 function say(text) { msg.textContent = text || ''; }
-function showStart(text) { startEl.hidden = false; hud.hidden = true; $('startClose').hidden = !A.live; say(text); }
-function hideStart() { startEl.hidden = true; hud.hidden = false; poke(); }
+function showStart(text) { startEl.hidden = false; hud.hidden = true; tab.hidden = true; $('startClose').hidden = !A.live; say(text); }
+function hideStart() { startEl.hidden = true; hud.hidden = false; tab.hidden = false; poke(); }
 function poke() {
-  hud.classList.remove('idle'); document.body.classList.remove('nocursor'); clearTimeout(idleTimer);
-  idleTimer = setTimeout(() => { if (startEl.hidden && !dash.classList.contains('open') && !hud.matches(':hover') && !hud.contains(document.activeElement)) { hud.classList.add('idle'); document.body.classList.add('nocursor'); } }, 2800);
+  hud.classList.remove('idle'); tab.classList.remove('idle'); document.body.classList.remove('nocursor'); clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => { if (startEl.hidden && !dash.classList.contains('open') && (TOUCH || !hud.matches(':hover')) && !hud.contains(document.activeElement)) { hud.classList.add('idle'); tab.classList.add('idle'); document.body.classList.add('nocursor'); } }, 2800);   // a tap leaves a phone "hovering", so only a mouse holds the strip up
 }
 function explain(err) {
   if (err && (err.name === 'NotAllowedError' || err.name === 'SecurityError')) return 'Audio capture was declined or is blocked on this page. Open the downloaded file in Chrome or Edge to capture a tab, or play audio files here.';
@@ -16,10 +16,11 @@ function explain(err) {
 async function choose(fn) {
   say('');
   try {
-    const label = await fn();
+    const got = await fn();
     $('player').hidden = srcNode !== playerNode || !playerNode; started = true; hideStart(); syncSource();
+    if (TOUCH && !hinted) { hinted = true; $('nameSub').textContent = 'Swipe for the next scene'; setTimeout(() => { if (cur) label(); }, 7000); }   // once, on a touch screen
     if (navigator.wakeLock && !wake) navigator.wakeLock.request('screen').then(w => { wake = w; w.addEventListener('release', () => { wake = null; }); }).catch(() => {});
-    return label;
+    return got;
   } catch (err) { if (!(err && err.name === 'AbortError')) { if (startEl.hidden) showStart(explain(err)); else say(explain(err)); } }
 }
 $('srcTab').onclick = () => choose(useTab);
@@ -35,12 +36,21 @@ $('bSrc').onclick = () => showStart('');
 $('startClose').onclick = hideStart;
 $('bFull').onclick = fullscreen;
 $('bDash').onclick = () => setDash(!dash.classList.contains('open'));
+$('tab').onclick = () => setDash(true);
+$('bLink').onclick = copyLink;
 $('dashClose').onclick = () => setDash(false);
 $('bSpaces').onclick = () => { CFG.spaces = !CFG.spaces; if (!CFG.spaces && cur.stage) cur.stage = 0; syncDash(); saveCfg(); };
 $('bFavOnly').onclick = () => { CFG.favOnly = !CFG.favOnly; syncDash(); saveCfg(); };
 $('bReset').onclick = () => { const keep = { fav: CFG.fav, hide: CFG.hide, micId: CFG.micId }; Object.assign(CFG, JSON.parse(JSON.stringify(DEFAULTS)), keep); setDetail(CFG.detail); syncDash(); saveCfg(); };   // the scene lists survive a reset
 $('bClear').onclick = () => { CFG.fav = {}; CFG.hide = {}; syncDash(); saveCfg(); };
 $('micPick').onchange = e => { CFG.micId = e.target.value; saveCfg(); choose(useMic); };
+// Copy link: the address already names the scene and its space, so the link opens dsViz right there. Phones get the share sheet.
+async function copyLink() {
+  const b = $('bLink'), url = location.href;
+  if (TOUCH && navigator.share) { try { await navigator.share({ title: 'dsViz', url }); } catch (e) {} return; }
+  try { await navigator.clipboard.writeText(url); b.textContent = 'Copied'; setTimeout(() => { b.textContent = 'Copy link'; }, 1500); }
+  catch (e) { window.prompt('Copy this link', url); }
+}
 function setAuto(v) { CFG.auto = v; sinceSwitch = 0; syncDash(); saveCfg(); }
 function setStage(i) { if (i && !cur.P.stages.includes(i)) return; cur.stage = i; label(); }
 // Random and Default for one section of the drawer. Random stays inside each slider's own band (the last column of ROWS).
@@ -126,6 +136,13 @@ function meters(dt) {
 }
 ['pointermove', 'pointerdown', 'keydown', 'touchstart'].forEach(ev => window.addEventListener(ev, poke, { passive: true }));
 canvas.addEventListener('dblclick', fullscreen);
+// A swipe across the picture changes scene (a mouse drag does the same).
+let swX = 0, swY = 0, swOn = false;
+canvas.addEventListener('pointerdown', e => { swX = e.clientX; swY = e.clientY; swOn = true; });
+canvas.addEventListener('pointerup', e => { if (!swOn) return; swOn = false; const dx = e.clientX - swX, dy = e.clientY - swY; if (Math.abs(dx) > 50 && Math.abs(dx) > 2 * Math.abs(dy) && startEl.hidden) step(dx < 0 ? 1 : -1); });
+canvas.addEventListener('pointercancel', () => { swOn = false; });
+// Someone edited the address: follow it.
+window.addEventListener('hashchange', () => { const h = fromHash(); if (h && cur && (h.i !== cur.i || h.stage !== (cur.stage || 0))) { go(h.i, true); cur.stage = h.stage; label(); } });
 window.addEventListener('keydown', e => {
   const tag = e.target && e.target.tagName;
   if (tag === 'SELECT' || (tag === 'INPUT' && e.target.type !== 'file')) { if (e.key === 'Escape') e.target.blur(); return; }
@@ -152,14 +169,19 @@ window.addEventListener('dragover', e => e.preventDefault());
 window.addEventListener('drop', e => { e.preventDefault(); dragDepth = 0; $('drop').hidden = true; const f = e.dataTransfer && e.dataTransfer.files; if (f && f.length) choose(async () => useFiles(f)); });
 
 // ---------- Boot ----------
+// Phones cannot capture another app's audio, so the microphone leads there; iPhones have no fullscreen either.
+if (!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia)) { $('srcTab').hidden = true; const m = $('srcMic'); m.classList.add('main'); m.querySelector('small').textContent = 'Listens to the room. Play the music on a speaker nearby.'; m.parentNode.prepend(m); }
+if (!document.documentElement.requestFullscreen) $('bFull').hidden = true;
 if (!gl) {
   say('This browser has no WebGL2, which the visualizer needs. A current Chrome, Edge or Firefox will run it.');
   document.querySelector('.sources').hidden = true;
 } else {
   try {
     for (let i = PRESETS.length - 1; i >= 0; i--) if ((!HDR && (PRESETS[i].fluid || PRESETS[i].sim)) || (!AGENTS.ok && PRESETS[i].agents)) PRESETS.splice(i, 1);   // the simulations need float render targets
-    build(); buildDash(); capH = DETAIL[CFG.detail][1]; resize();
-    const p = pool(); go(p[Math.floor(Math.random() * p.length)], true); syncDash();
+    build(); buildDash(); capH = CFG.detail === 0 ? AUTO_CAP : DETAIL[CFG.detail][1]; resize();
+    const h = fromHash(), p = pool();                                                   // a link that names a scene opens on it
+    if (h) { go(h.i, true); cur.stage = h.stage; label(); } else go(p[Math.floor(Math.random() * p.length)], true);
+    syncDash();
     last = performance.now(); requestAnimationFrame(tick);
   } catch (err) { console.error(err); say('The graphics setup failed on this device: ' + err.message); }
   canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); showStart('The graphics context was lost. Reload the page to restart.'); });

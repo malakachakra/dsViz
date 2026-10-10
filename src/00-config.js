@@ -1,4 +1,7 @@
 // ---------- Settings: one object every part of the visualizer reads, remembered between sessions ----------
+// What kind of screen this is: a phone gets the touch layout and starts lighter.
+const TOUCH = !!(window.matchMedia && matchMedia('(pointer: coarse)').matches);
+const AUTO_CAP = TOUCH && Math.min(screen.width, screen.height) < 900 ? 720 : 1080;   // where Auto detail starts
 const DEFAULTS = {
   intensity: 1, speed: 1, punch: 1, bass: 1, mid: 1, treb: 1,          // music
   bright: 1, trail: 1, glow: 1, hueShift: 0, sat: 1,                  // picture
