@@ -37,11 +37,15 @@ $('bFull').onclick = fullscreen;
 $('bDash').onclick = () => setDash(!dash.classList.contains('open'));
 $('dashClose').onclick = () => setDash(false);
 $('bSpaces').onclick = () => { CFG.spaces = !CFG.spaces; if (!CFG.spaces && cur.stage) cur.stage = 0; syncDash(); saveCfg(); };
-$('bSpace').onclick = () => cycleStage();
 $('bFavOnly').onclick = () => { CFG.favOnly = !CFG.favOnly; syncDash(); saveCfg(); };
-$('bReset').onclick = () => { Object.assign(CFG, JSON.parse(JSON.stringify(DEFAULTS))); setDetail(CFG.detail); syncDash(); saveCfg(); };
+$('bReset').onclick = () => { const keep = { fav: CFG.fav, hide: CFG.hide, micId: CFG.micId }; Object.assign(CFG, JSON.parse(JSON.stringify(DEFAULTS)), keep); setDetail(CFG.detail); syncDash(); saveCfg(); };   // the scene lists survive a reset
+$('bClear').onclick = () => { CFG.fav = {}; CFG.hide = {}; syncDash(); saveCfg(); };
 $('micPick').onchange = e => { CFG.micId = e.target.value; saveCfg(); choose(useMic); };
 function setAuto(v) { CFG.auto = v; sinceSwitch = 0; syncDash(); saveCfg(); }
+function setStage(i) { if (i && !cur.P.stages.includes(i)) return; cur.stage = i; label(); }
+// Random and Default for one section of the drawer. Random stays inside each slider's own band (the last column of ROWS).
+function sectionDefault(secId) { for (const r of ROWS) if (r[0] === secId) CFG[r[1]] = DEFAULTS[r[1]]; syncDash(); saveCfg(); }
+function sectionRandom(secId) { for (const [sec, key, , , , stp, , , band] of ROWS) if (sec === secId && band) CFG[key] = +(Math.round((band[0] + Math.random() * (band[1] - band[0])) / stp) * stp).toFixed(3); syncDash(); saveCfg(); }
 function setCam(on) { if (on) CFG.cam = CAM.lastAmt || 1; else { CAM.lastAmt = CFG.cam || 1; CFG.cam = 0; } syncDash(); saveCfg(); }
 function setDash(open) { dash.classList.toggle('open', open); document.body.classList.toggle('dash-open', open); $('bDash').setAttribute('aria-pressed', String(open)); poke(); }
 function fullscreen() {
@@ -50,20 +54,20 @@ function fullscreen() {
   else if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
 }
 
-// Settings drawer: sliders are built from this table so each one is a single line.
+// Settings drawer: sliders are built from this table so each one is a single line. The last column is the band Random picks from.
 const pct = x => Math.round(x * 100) + '%', sec = x => (x >= 10 ? Math.round(x) : x.toFixed(1)) + ' s';
 const ROWS = [
-  ['secMusic', 'intensity', 'Intensity', 0, 2.5, .05, pct, 'How hard the music drives everything'],
-  ['secMusic', 'speed', 'Speed', .25, 2.5, .05, pct, 'How fast things flow and travel'],
-  ['secMusic', 'punch', 'Beat punch', 0, 2, .05, pct, 'How hard kicks and beats hit'],
-  ['secMusic', 'bass', 'Bass', 0, 2, .05, pct, 'How much the low end counts'],
-  ['secMusic', 'mid', 'Mids', 0, 2, .05, pct, 'How much the middle counts'],
-  ['secMusic', 'treb', 'Treble', 0, 2, .05, pct, 'How much the high end counts'],
-  ['secPic', 'bright', 'Brightness', .3, 1.3, .05, pct, 'Overall brightness. Lower it for a big screen in a dark room'],
-  ['secPic', 'trail', 'Trails', .5, 2.5, .05, pct, 'How long things linger before fading'],
-  ['secPic', 'glow', 'Glow', 0, 2, .05, pct, 'The soft bloom around bright areas'],
-  ['secPic', 'sat', 'Saturation', 0, 1.5, .05, pct, 'From greyscale to vivid'],
-  ['secPic', 'hueShift', 'Colour shift', 0, 1, .01, x => Math.round(x * 360) + '°', 'Rotate every colour around the wheel'],
+  ['secMusic', 'intensity', 'Intensity', 0, 2.5, .05, pct, 'How hard the music drives everything', [.6, 1.6]],
+  ['secMusic', 'speed', 'Speed', .25, 2.5, .05, pct, 'How fast things flow and travel', [.5, 1.8]],
+  ['secMusic', 'punch', 'Beat punch', 0, 2, .05, pct, 'How hard kicks and beats hit', [.5, 1.6]],
+  ['secMusic', 'bass', 'Bass', 0, 2, .05, pct, 'How much the low end counts', [.5, 1.5]],
+  ['secMusic', 'mid', 'Mids', 0, 2, .05, pct, 'How much the middle counts', [.5, 1.5]],
+  ['secMusic', 'treb', 'Treble', 0, 2, .05, pct, 'How much the high end counts', [.5, 1.5]],
+  ['secPic', 'bright', 'Brightness', .3, 1.3, .05, pct, 'Overall brightness. Lower it for a big screen in a dark room', [.7, 1.1]],
+  ['secPic', 'trail', 'Trails', .5, 2.5, .05, pct, 'How long things linger before fading', [.6, 2]],
+  ['secPic', 'glow', 'Glow', 0, 2, .05, pct, 'The soft bloom around bright areas', [.3, 1.8]],
+  ['secPic', 'sat', 'Saturation', 0, 1.5, .05, pct, 'From greyscale to vivid', [.6, 1.4]],
+  ['secPic', 'hueShift', 'Colour shift', 0, 1, .01, x => Math.round(x * 360) + '°', 'Rotate every colour around the wheel', [0, 1]],
   ['secCam', 'cam', 'Movement', 0, 2, .05, x => x === 0 ? 'Off' : pct(x), 'How far the camera swings, turns and travels. 0 locks it'],
   ['secScenes', 'sceneSec', 'Each scene', 10, 120, 5, sec, 'How long before Auto moves on'],
   ['secScenes', 'transSec', 'Crossfade', .5, 6, .1, sec, 'How long one scene takes to melt into the next']
@@ -77,6 +81,9 @@ function buildDash() {
     row.append(sp, inp, out); row._sync = () => { inp.value = CFG[key]; out.textContent = fmt(CFG[key]); };
     const s = $(secId), anchor = s.querySelector('.btns'); if (secId === 'secScenes') s.insertBefore(row, s.querySelector('.hint')); else if (anchor) s.insertBefore(row, anchor); else s.appendChild(row);
   }
+  dash.querySelectorAll('[data-rand]').forEach(b => { b.onclick = () => sectionRandom(b.dataset.rand); });
+  dash.querySelectorAll('[data-def]').forEach(b => { b.onclick = () => sectionDefault(b.dataset.def); });
+  STAGES.forEach((name, i) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = name; b.title = i ? 'Show this scene as a ' + name.toLowerCase() : 'Show this scene flat'; b.onclick = () => setStage(i); $('spaceBtns').appendChild(b); });
   DETAIL.forEach(([name], i) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = name; b.onclick = () => { setDetail(i); syncDash(); }; $('detailBtns').appendChild(b); });
   PRESETS.forEach((P, i) => {
     const li = document.createElement('li'), g = document.createElement('button'), f = document.createElement('button'), h = document.createElement('button');
@@ -132,6 +139,7 @@ window.addEventListener('keydown', e => {
   else if (k === 'q') { setDetail(CFG.detail + 1); syncDash(); }
   else if (k === 'd') setDash(!dash.classList.contains('open'));
   else if (k === 'v') cycleStage();
+  else if (k === 'r') sectionRandom('secPic');
   else if (k === 's' && startEl.hidden) showStart('');
   else if (k === 'escape') { if (dash.classList.contains('open')) setDash(false); else if (!startEl.hidden && A.live) hideStart(); }
   else if (k >= '0' && k <= '9') { const n = k === '0' ? 9 : +k - 1; if (n < PRESETS.length) go(n); }
@@ -158,7 +166,7 @@ if (!gl) {
 }
 // Hook for automated checks: steps the renderer on a stand-in signal with no real audio.
 window.__viz = {
-  names: PRESETS.map(p => p.name), A, CAM, CFG,
+  names: PRESETS.map(p => p.name), A, CAM, CFG, get cur() { return cur; },
   step(n, dt) { testMode = true; dt = dt || 1 / 60; resize(); for (let i = 0; i < n; i++) { clock += dt; fakeFeatures(clock, dt); render(dt); } gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4)); },
   go(i, stage) { go(i, true); if (stage != null) { cur.stage = stage; label(); } }, cut(i) { go(i, false); }, live() { testMode = false; }, sync: () => syncDash()
 };

@@ -61,7 +61,9 @@ body.dash-open #hud { right: var(--dash); }
 #dash h2 { font-family: var(--display); font-weight: 800; font-size: 22px; letter-spacing: -.02em; margin: 0; }
 #dash section { display: flex; flex-direction: column; gap: 9px; }
 #dash h3 { margin: 0 0 2px; font-size: 10.5px; font-weight: 500; letter-spacing: .14em; text-transform: uppercase; color: var(--dim); display: flex; align-items: center; gap: 10px; }
-#dash h3::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+#dash h3::after { content: ""; flex: 1; order: 1; height: 1px; background: var(--line); }
+#dash h3 .h3btns { order: 2; display: flex; gap: 4px; letter-spacing: 0; text-transform: none; }
+#dash h3 .h3btns button { padding: 2px 8px; font-size: 10.5px; }
 .row { display: grid; grid-template-columns: 96px minmax(0, 1fr) 46px; align-items: center; gap: 10px; }
 .row output { text-align: right; color: var(--dim); font-variant-numeric: tabular-nums; }
 .hint { margin: 0; color: var(--dim); font-size: 11.5px; line-height: 1.45; }
@@ -91,7 +93,7 @@ body.nocursor, body.nocursor * { cursor: none; }
   <h1 id="ttl">dsViz</h1>
   <p>A feedback visualizer that moves with whatever you play. Choose where the music comes from.</p>
   <div class="sources">
-    <button id="srcTab" class="main" type="button"><b>Capture tab or system audio</b><small>Pick the tab or screen that is playing, and switch on "Share audio" in the dialog.</small></button>
+    <button id="srcTab" class="main" type="button"><b>Capture tab or system audio</b><small>Pick the window, tab or screen that is playing, then tick the "Share audio" box at the bottom of the dialog. Without it the visualizer hears nothing.</small></button>
     <label class="pick"><input id="srcFile" type="file" accept="audio/*,video/*" multiple><b>Play audio files</b><small>Choose files, or drop them anywhere on the page.</small></label>
     <button id="srcMic" type="button"><b>Microphone</b><small>Listens to the room. Choose which microphone under Settings.</small></button>
     <button id="srcDemo" type="button"><b>Demo beat</b><small>A built-in loop, to see how it reacts.</small></button>
@@ -126,14 +128,15 @@ body.nocursor, body.nocursor * { cursor: none; }
     <p id="inTxt">No source chosen yet.</p>
     <label id="micRow" for="micPick" hidden><span>Microphone</span><select id="micPick"></select></label>
   </section>
-  <section id="secMusic"><h3>Music</h3></section>
-  <section id="secPic"><h3>Picture</h3></section>
+  <section id="secMusic"><h3>Music<span class="h3btns"><button type="button" data-rand="secMusic" title="Random settings for this section">Random</button><button type="button" data-def="secMusic" title="Back to the defaults for this section">Default</button></span></h3></section>
+  <section id="secPic"><h3>Picture<span class="h3btns"><button type="button" data-rand="secPic" title="Random settings for this section (R)">Random</button><button type="button" data-def="secPic" title="Back to the defaults for this section">Default</button></span></h3></section>
   <section id="secCam">
     <h3>Camera</h3>
     <div class="btns">
       <button id="bSpaces" type="button" aria-pressed="true" title="Let scenes wrap into tunnels, domes and floors you fly through">3D spaces</button>
-      <button id="bSpace" type="button" title="Change the space this scene is in (V)">Space: Flat</button>
     </div>
+    <div class="btns" id="spaceBtns"></div>
+    <p class="hint">Where this scene is shown right now. V cycles the spaces that suit it; the others are greyed.</p>
   </section>
   <section>
     <h3>Detail</h3>
@@ -150,7 +153,7 @@ body.nocursor, body.nocursor * { cursor: none; }
     <ul id="sceneList"></ul>
   </section>
   <section>
-    <div class="btns"><button id="bReset" type="button">Reset all settings</button></div>
+    <div class="btns"><button id="bReset" type="button" title="Every slider and switch back to how it came. Keeps Fav and Hide">Reset all settings</button><button id="bClear" type="button" title="Empty the Fav and Hide lists">Clear Fav and Hide</button></div>
   </section>
 </aside>
 <div id="drop" hidden>Drop to play</div>

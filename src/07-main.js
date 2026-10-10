@@ -8,7 +8,7 @@ const DETAIL = [['Auto', 1080], ['720p', 720], ['1080p', 1080], ['1440p', 1440],
 // Which 3D spaces suit which scene (1 tunnel, 2 dome, 3 floor). Scenes not listed are either flat or already 3D.
 const SPACES = { 'Plasma Tide': [1, 2], 'Prism Cathedral': [2, 3], 'Aurora Veil': [2], 'Ink Bloom': [3], 'Solar Petals': [1], 'Julia Garden': [1, 2, 3], 'Silk Ribbons': [1],
   'Neon Horizon': [2], 'Velvet Smoke': [2], 'Oil Slick': [3], 'Acrylic Pour': [3], 'Glass Tide': [1], 'Pool Floor': [3], 'Quicksilver': [3], 'Petri': [2, 3], 'Maelstrom': [3, 1], 'Hall of Mirrors': [2],
-  'Slime Mould': [2, 3], 'Lichtenberg': [2], 'Cathode': [1], 'Deep Field': [1, 3], 'Loom': [1, 3], 'Henry': [2] };
+  'Slime Mould': [2, 3], 'Lichtenberg': [2], 'Cathode': [1], 'Deep Field': [1, 3], 'Loom': [1, 3], 'Henry': [2], 'Henry Deux': [2], 'Henry 3': [2, 3] };
 let downProg, upProg;
 
 function build() {
@@ -55,7 +55,7 @@ function makeState(P) { const S = { P, t: 0, mt: Math.random() * 60, seed: [Math
 function label() {
   $('nameTxt').textContent = cur.P.name;
   $('nameSub').textContent = 'Scene ' + (cur.i + 1) + ' of ' + PRESETS.length + (cur.stage ? ' · ' + STAGES[cur.stage] : '');
-  const b = $('bSpace'); if (b) { b.disabled = !cur.P.stages.length; b.textContent = 'Space: ' + STAGES[cur.stage || 0]; }
+  const g = $('spaceBtns'); if (g) [...g.children].forEach((b, i) => { b.disabled = i > 0 && !cur.P.stages.includes(i); b.setAttribute('aria-pressed', String((cur.stage || 0) === i)); });
 }
 function go(i, instant) {
   i = (i + PRESETS.length) % PRESETS.length;

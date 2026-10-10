@@ -9,8 +9,8 @@ function attachStream(s) {
 }
 async function useTab() {
   if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) throw new Error('This browser cannot capture tab or system audio. Try Chrome or Edge on a computer.');
-  const s = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 1, width: 320, height: 180 }, audio: RAW_AUDIO, systemAudio: 'include', selfBrowserSurface: 'exclude' });
-  if (!s.getAudioTracks().length) { s.getTracks().forEach(tr => tr.stop()); throw new Error('That share had no audio. Try again and switch on "Share tab audio" or "Share system audio" before confirming.'); }
+  const s = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 1, width: 320, height: 180, displaySurface: 'window' }, audio: RAW_AUDIO, systemAudio: 'include', selfBrowserSurface: 'exclude' });   // opens on the Window pane; the "Share audio" box is the browser's and cannot be pre-ticked
+  if (!s.getAudioTracks().length) { s.getTracks().forEach(tr => tr.stop()); throw new Error('That share had no audio. Try again and tick the "Share audio" box at the bottom of the dialog before confirming.'); }
   attachStream(s); sourceKind = 'tab';
   return 'Tab / system audio';
 }

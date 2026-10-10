@@ -61,9 +61,9 @@ PRESETS.push({
     vec3 c=mix(P(q), B(q), .12);
     return c*vec3(.86,.93,.88)*DK(.86); }`,
   comp: `vec3 comp(vec2 p){
-    vec2 q=p*(1.+.06*dot(p,p));                                            // the glass is curved
+    vec2 q=stage==0 ? p*(1.+.06*dot(p,p)) : p;                              // the glass is curved; in a space the phosphor is the wall itself, no tube
     vec2 e=abs(q)/vec2(aspect,1.);
-    float tube=smoothstep(1.02,.96,max(e.x,e.y))*smoothstep(1.4,1.1,length(e*vec2(.8,1.)));
+    float tube=stage==0 ? smoothstep(1.02,.96,max(e.x,e.y))*smoothstep(1.4,1.1,length(e*vec2(.8,1.))) : 1.;
     vec3 ph=vec3(.3,1.,.45);
     float g=lum(P(q))*1.3+lum(B(q))*.9;
     float scan=.78+.22*sin(q.y*res.y*1.4+t*2.), flick=.96+.04*sin(t*120.);
@@ -72,7 +72,7 @@ PRESETS.push({
     vec2 gr=abs(fract(q*vec2(1./aspect,1.)*5.+.5)-.5);                     // the graticule
     float grid=smoothstep(.03,.0,min(gr.x,gr.y))*.06+smoothstep(.015,.0,min(abs(q.x),abs(q.y)))*.08;
     c+=ph*grid+vec3(.012,.03,.02);
-    return c*tube*vig(p*.6); }`,
+    return c*tube*(stage==0 ? vig(p*.6) : 1.); }`,
   init(S) { S.ra = 3; S.rb = 2; S.ph = 0; S.roll = 0; S.tear = 0; S.mark = -1; },
   update(S, dt) {
     if (A.onBeat && A.beats % 8 === 0 && A.beats !== S.mark) { S.mark = A.beats; const r = [[1, 2], [2, 3], [3, 4], [3, 2], [4, 5], [5, 4], [1, 3], [5, 6], [2, 5]][Math.floor(Math.random() * 9)]; S.ra = r[0]; S.rb = r[1]; }

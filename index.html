@@ -66,7 +66,9 @@ body.dash-open #hud { right: var(--dash); }
 #dash h2 { font-family: var(--display); font-weight: 800; font-size: 22px; letter-spacing: -.02em; margin: 0; }
 #dash section { display: flex; flex-direction: column; gap: 9px; }
 #dash h3 { margin: 0 0 2px; font-size: 10.5px; font-weight: 500; letter-spacing: .14em; text-transform: uppercase; color: var(--dim); display: flex; align-items: center; gap: 10px; }
-#dash h3::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+#dash h3::after { content: ""; flex: 1; order: 1; height: 1px; background: var(--line); }
+#dash h3 .h3btns { order: 2; display: flex; gap: 4px; letter-spacing: 0; text-transform: none; }
+#dash h3 .h3btns button { padding: 2px 8px; font-size: 10.5px; }
 .row { display: grid; grid-template-columns: 96px minmax(0, 1fr) 46px; align-items: center; gap: 10px; }
 .row output { text-align: right; color: var(--dim); font-variant-numeric: tabular-nums; }
 .hint { margin: 0; color: var(--dim); font-size: 11.5px; line-height: 1.45; }
@@ -99,7 +101,7 @@ body.nocursor, body.nocursor * { cursor: none; }
   <h1 id="ttl">dsViz</h1>
   <p>A feedback visualizer that moves with whatever you play. Choose where the music comes from.</p>
   <div class="sources">
-    <button id="srcTab" class="main" type="button"><b>Capture tab or system audio</b><small>Pick the tab or screen that is playing, and switch on "Share audio" in the dialog.</small></button>
+    <button id="srcTab" class="main" type="button"><b>Capture tab or system audio</b><small>Pick the window, tab or screen that is playing, then tick the "Share audio" box at the bottom of the dialog. Without it the visualizer hears nothing.</small></button>
     <label class="pick"><input id="srcFile" type="file" accept="audio/*,video/*" multiple><b>Play audio files</b><small>Choose files, or drop them anywhere on the page.</small></label>
     <button id="srcMic" type="button"><b>Microphone</b><small>Listens to the room. Choose which microphone under Settings.</small></button>
     <button id="srcDemo" type="button"><b>Demo beat</b><small>A built-in loop, to see how it reacts.</small></button>
@@ -134,14 +136,15 @@ body.nocursor, body.nocursor * { cursor: none; }
     <p id="inTxt">No source chosen yet.</p>
     <label id="micRow" for="micPick" hidden><span>Microphone</span><select id="micPick"></select></label>
   </section>
-  <section id="secMusic"><h3>Music</h3></section>
-  <section id="secPic"><h3>Picture</h3></section>
+  <section id="secMusic"><h3>Music<span class="h3btns"><button type="button" data-rand="secMusic" title="Random settings for this section">Random</button><button type="button" data-def="secMusic" title="Back to the defaults for this section">Default</button></span></h3></section>
+  <section id="secPic"><h3>Picture<span class="h3btns"><button type="button" data-rand="secPic" title="Random settings for this section (R)">Random</button><button type="button" data-def="secPic" title="Back to the defaults for this section">Default</button></span></h3></section>
   <section id="secCam">
     <h3>Camera</h3>
     <div class="btns">
       <button id="bSpaces" type="button" aria-pressed="true" title="Let scenes wrap into tunnels, domes and floors you fly through">3D spaces</button>
-      <button id="bSpace" type="button" title="Change the space this scene is in (V)">Space: Flat</button>
     </div>
+    <div class="btns" id="spaceBtns"></div>
+    <p class="hint">Where this scene is shown right now. V cycles the spaces that suit it; the others are greyed.</p>
   </section>
   <section>
     <h3>Detail</h3>
@@ -158,7 +161,7 @@ body.nocursor, body.nocursor * { cursor: none; }
     <ul id="sceneList"></ul>
   </section>
   <section>
-    <div class="btns"><button id="bReset" type="button">Reset all settings</button></div>
+    <div class="btns"><button id="bReset" type="button" title="Every slider and switch back to how it came. Keeps Fav and Hide">Reset all settings</button><button id="bClear" type="button" title="Empty the Fav and Hide lists">Clear Fav and Hide</button></div>
   </section>
 </aside>
 <div id="drop" hidden>Drop to play</div>
@@ -508,8 +511,8 @@ function attachStream(s) {
 }
 async function useTab() {
   if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) throw new Error('This browser cannot capture tab or system audio. Try Chrome or Edge on a computer.');
-  const s = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 1, width: 320, height: 180 }, audio: RAW_AUDIO, systemAudio: 'include', selfBrowserSurface: 'exclude' });
-  if (!s.getAudioTracks().length) { s.getTracks().forEach(tr => tr.stop()); throw new Error('That share had no audio. Try again and switch on "Share tab audio" or "Share system audio" before confirming.'); }
+  const s = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 1, width: 320, height: 180, displaySurface: 'window' }, audio: RAW_AUDIO, systemAudio: 'include', selfBrowserSurface: 'exclude' });   // opens on the Window pane; the "Share audio" box is the browser's and cannot be pre-ticked
+  if (!s.getAudioTracks().length) { s.getTracks().forEach(tr => tr.stop()); throw new Error('That share had no audio. Try again and tick the "Share audio" box at the bottom of the dialog before confirming.'); }
   attachStream(s); sourceKind = 'tab';
   return 'Tab / system audio';
 }
@@ -1686,9 +1689,9 @@ PRESETS.push({
     vec3 c=mix(P(q), B(q), .12);
     return c*vec3(.86,.93,.88)*DK(.86); }`,
   comp: `vec3 comp(vec2 p){
-    vec2 q=p*(1.+.06*dot(p,p));                                            // the glass is curved
+    vec2 q=stage==0 ? p*(1.+.06*dot(p,p)) : p;                              // the glass is curved; in a space the phosphor is the wall itself, no tube
     vec2 e=abs(q)/vec2(aspect,1.);
-    float tube=smoothstep(1.02,.96,max(e.x,e.y))*smoothstep(1.4,1.1,length(e*vec2(.8,1.)));
+    float tube=stage==0 ? smoothstep(1.02,.96,max(e.x,e.y))*smoothstep(1.4,1.1,length(e*vec2(.8,1.))) : 1.;
     vec3 ph=vec3(.3,1.,.45);
     float g=lum(P(q))*1.3+lum(B(q))*.9;
     float scan=.78+.22*sin(q.y*res.y*1.4+t*2.), flick=.96+.04*sin(t*120.);
@@ -1697,7 +1700,7 @@ PRESETS.push({
     vec2 gr=abs(fract(q*vec2(1./aspect,1.)*5.+.5)-.5);                     // the graticule
     float grid=smoothstep(.03,.0,min(gr.x,gr.y))*.06+smoothstep(.015,.0,min(abs(q.x),abs(q.y)))*.08;
     c+=ph*grid+vec3(.012,.03,.02);
-    return c*tube*vig(p*.6); }`,
+    return c*tube*(stage==0 ? vig(p*.6) : 1.); }`,
   init(S) { S.ra = 3; S.rb = 2; S.ph = 0; S.roll = 0; S.tear = 0; S.mark = -1; },
   update(S, dt) {
     if (A.onBeat && A.beats % 8 === 0 && A.beats !== S.mark) { S.mark = A.beats; const r = [[1, 2], [2, 3], [3, 4], [3, 2], [4, 5], [5, 4], [1, 3], [5, 6], [2, 5]][Math.floor(Math.random() * 9)]; S.ra = r[0]; S.rb = r[1]; }
@@ -1806,55 +1809,113 @@ PRESETS.push({
 // A painting rebuilt in shader: a triangle with a purple border, pink and yellow herringbone above, orange and
 // yellow stripes below, an orange diamond holding an eye with a googly pupil, and rows of green, blue and dark
 // green teeth around the diamond. Nothing here is the photo; every shape is drawn from scratch, so each part can
-// move on its own: the stripes crawl, the pupil rattles around like a real googly eye, the iris swirls on bass,
-// the lids blink, and as the song builds the triangle breathes, bends, and fills its corners with smaller Henrys.
-const HENRY_LIB = `
+// move on its own: the stripes crawl, the pupil rattles around like a real googly eye, the lashes sway and flick
+// on the beat, the lids blink, and as the song builds the triangle breathes, bends, and fills its corners with
+// smaller Henrys.
+// HENRY_GEOM holds the shapes and colours and is shared with Henry Deux and Henry 3; design() paints them.
+const HENRY_GEOM = `
 const vec2 AP=vec2(0.,.93); const float BY=-.82, HW=1.02, DW=.72, DH=.50;
 const vec2 DC=vec2(0.,-.10), EC=vec2(0.,-.12);
-const vec3 PURPLE=vec3(.45,.10,.72), PINK=vec3(1.,.33,.55), YEL=vec3(1.,.88,.15), ORG=vec3(.96,.52,.25), ORG2=vec3(1.,.40,.10),
+const float EW=.51, EU=.165, EL=.175, GR=.17;                 // the eyeball's half-width and its heights above and below, the googly's radius
+const vec3 PURPLE=vec3(.45,.10,.72), DKP=vec3(.16,.02,.18), PINK=vec3(1.,.33,.55), YEL=vec3(1.,.88,.15), ORG=vec3(.96,.52,.25), ORG2=vec3(1.,.40,.10),
   GRN=vec3(.50,.85,.38), BLU=vec3(.16,.47,.92), DKG=vec3(.08,.46,.34), TEAL=vec3(.15,.52,.68), WHT=vec3(.96), BLK=vec3(.02);
 float triSD(vec2 p){ vec2 n=normalize(vec2(AP.y-BY, HW)); return max(dot(vec2(abs(p.x),p.y)-AP, n), BY-p.y); }
+float almK(float xn){ return pow(max(1.-xn*xn,0.),.65); }
 float alm(vec2 e, float w, float hu, float hl){                // 1 inside an almond: half-width w, height hu above, hl below
   float xn=e.x/w; if(abs(xn)>=1.) return 0.;
-  float k=pow(1.-xn*xn,.65); return (e.y<hu*k && e.y>-hl*k) ? 1. : 0.; }
+  float k=almK(xn); return (e.y<hu*k && e.y>-hl*k) ? 1. : 0.; }
 float tooth(float s){ return 1.-abs(fract(s)*2.-1.); }
-vec3 teethCol(float s){ float i=mod(floor(s),3.); return i<.5?GRN:(i<1.5?BLU:DKG); }
+vec3 teethCol(float s){ float i=floor(s); return mod(i,7.)<.5?GRN:(mod(i,2.)<.5?DKG:BLU); }   // dark green and blue turn about, a light green one now and then
+// The lashes: green strokes painted inside the eyeball, all hanging from its top edge and bending in toward the
+// pupil; the outer three on the right sweep down along the lower edge. (x on the edge, bend direction, curve radius, length)
+const vec4 LASH[12]=vec4[12](
+  vec4(-.375,1.,.17,.07), vec4(-.324,1.,.17,.11), vec4(-.278,1.,.17,.15), vec4(-.231,1.,.17,.14), vec4(-.19,1.,.17,.10),
+  vec4(.175,-1.,.17,.11), vec4(.237,-1.,.17,.12), vec4(.298,-1.,.17,.10), vec4(.35,-1.,.17,.08),
+  vec4(.40,-1.,.13,.15), vec4(.45,-1.,.12,.14), vec4(.49,-1.,.11,.10));
+float lash(vec2 e, vec2 a, float R, float ang, float dx, float sway){
+  vec2 q=rot(sway)*(e-a)+a, d=q-(a+vec2(dx*R,0.));
+  float t=atan(d.y,d.x), ph=dx>0. ? PI+t : -t, s=ph/ang;             // how far down the stroke this angle sits
+  if(s<0.||s>1.) return 0.;
+  float w=.0095*(1.-.5*s);                                           // tapers toward the tip
+  return smoothstep(w+.004, w-.001, abs(length(d)-R)); }
+float lashes(vec2 e, float sw, float flick){                        // sw sways them slowly, flick stretches them on a beat
+  float m=0.;
+  for(int i=0;i<12;i++){ vec4 L=LASH[i]; vec2 a=vec2(L.x, EU*almK(L.x/EW)*.97);
+    m=max(m, lash(e, a, L.z, L.w/L.z*(1.+.35*flick), L.y, .12*sin(sw+float(i)*1.7))); }
+  return m; }
+`;
+const HENRY_LIB = HENRY_GEOM + `
 // The whole design at point p. Returns colour and coverage (1 inside the triangle).
 vec4 design(vec2 p){
   float sd=triSD(p); if(sd>.01) return vec4(0.);
   float cov=smoothstep(.01,-.004,sd);
   float gx=u0.x, gy=u0.y, pr=u0.z, blink=u0.w, swirl=u1.x, s1=u1.w, s2=u1.w*.7;
   vec3 c;
-  // stripes: herringbone above the diamond's middle, leaning stripes below
-  if(p.y>DC.y){ float tt=(abs(p.x)*.75+(AP.y-p.y))*7.+s1; c=fract(tt)<.5?PINK:YEL;
-    if(abs(p.x)<.013) c=fract(tt*.5)<.5?GRN:PINK; }
+  // stripes: herringbone above the diamond's middle (chevrons pointing up at the tip, the two halves half a band apart), leaning stripes below
+  if(p.y>DC.y){ float tt=((AP.y-p.y)-abs(p.x)*.75)*6.5+s1+step(0.,p.x)*.5; c=fract(tt)<.5?PINK:YEL;
+    if(AP.y-p.y<.11) c=GRN;                                                                // the green tip
+    if(p.y>DC.y+DH-.03 && p.y-(DC.y+DH)<.13-abs(p.x)*2.2) c=GRN; }                         // and the green leaf over the diamond
   else { float tt=(abs(p.x)+(p.y-BY)*.28)*5.5+s2; c=fract(tt)<.5?ORG2:YEL; }
   // the diamond, with its rows of teeth
   float dd=abs(p.x-DC.x)/DW+abs(p.y-DC.y)/DH-1.;
   if(dd<0.) c=ORG;
-  else if(dd<.2){ float s=p.x*5.+(p.y>DC.y?.5:0.); if(dd<.2*tooth(s)) c=teethCol(s); }
-  // the eye
-  vec2 e=p-EC; float op=1.-blink*.92;
-  if(alm(e,.65,.32*op+.03,.29*op+.03)>0.){
-    c=vec3(.12,.02,.14);
-    if(alm(e,.62,.295*op+.02,.265*op+.02)>0.) c=YEL;
-    if(alm(e,.59,.27*op+.01,.24*op+.01)>0.) c=PINK;
-    if(alm(e,.51,.21*op,.19*op)>0.){
-      float r=length(e), a=atan(e.y,e.x);
-      c=TEAL;
-      float streak=smoothstep(.55,.9,sin(a*9.+swirl+r*5.))*smoothstep(.16,.2,r)*smoothstep(.6,.3,r);
-      c=mix(c, GRN, streak);
-      vec2 td=(e-vec2(-.42,0.))/vec2(.08,.05); if(dot(td,td)<1.) c=YEL;      // the tear duct
-      if(r<.15){ c=WHT*smoothstep(.15,.135,r)+vec3(.55)*(1.-smoothstep(.15,.135,r)); // the googly: a white disc with a grey rim
+  else if(dd<.3){ float s=p.x*9.+(p.y>DC.y?.5:0.); if(dd<.3*tooth(s)) c=teethCol(s+1.); }
+  // the eye, outside in (heights measured off the painting): a dark crease, a yellow strip with a line under it (upper lid
+  // only), the pink lids, a green outline, the eyeball. A blink folds the lids down and squeezes the eyeball shut.
+  vec2 e=p-EC; float op=1.-blink*.92, ld=1.-blink*.7;
+  if(alm(e,.57,.345*ld,.283*ld)>0.){
+    c=DKP;
+    if(alm(e,.55,.333*ld,.267*ld)>0.) c=e.y>0.?YEL:PINK;
+    if(alm(e,.53,.303*ld,.267*ld)>0.) c=e.y>0.?DKP:PINK;
+    if(alm(e,.52,.288*ld,.267*ld)>0.) c=PINK;
+    if(alm(e,EW+.015,(EU+.015)*op,(EL+.015)*op)>0.){
+      c=GRN;
+      if(alm(e,EW,EU*op,EL*op)>0.) c=mix(TEAL, GRN, lashes(e, swirl, beat));
+      vec2 td=(e-vec2(-.46,0.))/vec2(.075,.045); float tdd=dot(td,td);                  // the tear duct, in the inner corner
+      if(tdd<1.35) c=GRN; if(tdd<1.) c=YEL;
+      float r=length(e);
+      if(r<GR){                                                                           // the googly: a grey plastic rim round a white dome
+        c=mix(vec3(.60,.61,.65), vec3(.93,.93,.95)*(.94+.06*smoothstep(.12,-.12,e.y-e.x*.4)), smoothstep(GR,GR-.018,r));
         vec2 g=e-vec2(gx,gy); float gr=length(g);
         c=mix(c, BLK, smoothstep(pr+.004,pr-.004,gr));
-        c=mix(c, WHT, smoothstep(.02,.012,length(g-vec2(-.028,.03)))*.9); }
+        c=mix(c, WHT, smoothstep(.022,.012,length(g-vec2(-.03,.032)))*.85); }
     }
   }
+  if(e.y<-.1 && e.x<.15 && e.x>-.5){ float r2=alm(e,.60,.37*ld,.334*ld)-alm(e,.59,.36*ld,.319*ld); if(r2>0.) c=DKP; }   // a second, shorter crease under the lower lid
   // the border
   c=mix(c, PURPLE*(1.+.5*beat), smoothstep(-.075,-.06,sd));
   return vec4(c*.85,cov); }
 `;
+
+// The living parts every Henry shares: the googly pupil on its spring, the blinks, and the crawl of the stripes and lashes.
+function henryInit(S) { S.gx = 0; S.gy = -.03; S.gvx = 0; S.gvy = 0; S.blink = 0; S.blinkT = 0; S.nextBlink = rnd(3, 7); S.s1 = 0; S.swirl = 0; }
+function henryEye(S, dt) {
+  // the googly pupil: a loose disc on a spring, kicked by every beat, falling back down between them
+  if (A.onBeat) { const a = rnd(0, TAU), m = (.5 + .6 * Math.min(2, A.bass)) * CFG.punch; S.gvx += Math.cos(a) * m; S.gvy += Math.sin(a) * m; }
+  S.gvx += (-12 * S.gx - 1.6 * S.gvx) * dt; S.gvy += (-12 * S.gy - 1.6 * S.gvy - .7) * dt;
+  S.gx += S.gvx * dt; S.gy += S.gvy * dt;
+  const pr = .095 * (1 + .3 * Math.min(1.5, A.kick)), lim = .165 - pr - .004, r = Math.hypot(S.gx, S.gy);
+  if (r > lim) { const nx = S.gx / r, ny = S.gy / r; S.gx = nx * lim; S.gy = ny * lim; const vn = S.gvx * nx + S.gvy * ny; if (vn > 0) { S.gvx -= 1.7 * vn * nx; S.gvy -= 1.7 * vn * ny; } }
+  // blinks: now and then, and whenever the song changes gear
+  S.blinkT += dt;
+  if (S.blink <= 0 && (S.blinkT > S.nextBlink || A.onSwing)) { S.blink = 1e-3; S.blinkT = 0; S.nextBlink = rnd(4, 11); }
+  if (S.blink > 0) { S.blink += dt * 7; if (S.blink >= 2) S.blink = 0; }
+  const bl = S.blink > 0 ? 1 - Math.abs(S.blink - 1) : 0;
+  S.s1 += dt * (.25 + .5 * Math.min(2, A.midA)) * CFG.speed; S.swirl += dt * (.3 + 1.2 * Math.max(0, A.bassA - .6)) * CFG.speed;
+  S.u0[0] = S.gx; S.u0[1] = S.gy; S.u0[2] = pr; S.u0[3] = bl;
+  S.u1[0] = S.swirl; S.u1[3] = S.s1;
+}
+// The long arc Henry Deux and Henry 3 share: whole as Henry for a while, then let go into pure visualizer for a
+// good while, then back on a cue (a swing, a 32-beat line, or the timer). S.form runs from 1 (whole) to 0 (gone).
+// Returns true on the frame it comes back.
+function henryArcInit(S) { S.form = 1; S.want = 1; S.arcT = 0; S.holdT = rnd(6, 11); S.roamT = rnd(22, 40); }
+function henryArc(S, dt) {
+  S.arcT += dt; let back = false;
+  if (S.want === 1 && S.arcT > S.holdT) { S.want = 0; S.arcT = 0; S.roamT = rnd(22, 40); }
+  else if (S.want === 0 && (S.arcT > S.roamT || (S.arcT > 10 && A.onSwing) || (S.arcT > 14 && A.onBeat && A.beats % 32 === 0))) { S.want = 1; S.arcT = 0; S.holdT = rnd(6, 11); back = true; }
+  S.form += (S.want - S.form) * Math.min(1, dt * (S.want ? 1.6 : .35));
+  return back;
+}
 
 PRESETS.push({
   name: 'Henry', accent: '#ff5c8d', cam: .7,
@@ -1892,29 +1953,192 @@ PRESETS.push({
     vec3 c=mix(trails, d.rgb*(1.05+.15*beat), d.a);
     c=hueRot(c, .35*sin(mt*.37)*trip*trip);
     return c*vig(p); }`,
-  init(S) { S.gx = 0; S.gy = -.03; S.gvx = 0; S.gvy = 0; S.blink = 0; S.blinkT = 0; S.nextBlink = rnd(3, 7); S.trip = 0; S.nest = 0; S.s1 = 0; S.swirl = 0; },
+  init(S) { henryInit(S); S.trip = 0; S.nest = 0; },
   update(S, dt) {
-    // the googly pupil: a loose disc on a spring, kicked by every beat, falling back down between them
-    if (A.onBeat) { const a = rnd(0, TAU), m = (.5 + .6 * Math.min(2, A.bass)) * CFG.punch; S.gvx += Math.cos(a) * m; S.gvy += Math.sin(a) * m; }
-    S.gvx += (-12 * S.gx - 1.6 * S.gvx) * dt; S.gvy += (-12 * S.gy - 1.6 * S.gvy - .7) * dt;
-    S.gx += S.gvx * dt; S.gy += S.gvy * dt;
-    const pr = .085 * (1 + .3 * Math.min(1.5, A.kick)), lim = .15 - pr - .004, r = Math.hypot(S.gx, S.gy);
-    if (r > lim) { const nx = S.gx / r, ny = S.gy / r; S.gx = nx * lim; S.gy = ny * lim; const vn = S.gvx * nx + S.gvy * ny; if (vn > 0) { S.gvx -= 1.7 * vn * nx; S.gvy -= 1.7 * vn * ny; } }
-    // blinks: now and then, and whenever the song changes gear
-    S.blinkT += dt;
-    if (S.blink <= 0 && (S.blinkT > S.nextBlink || A.onSwing)) { S.blink = 1e-3; S.blinkT = 0; S.nextBlink = rnd(4, 11); }
-    if (S.blink > 0) { S.blink += dt * 7; if (S.blink >= 2) S.blink = 0; }
-    const bl = S.blink > 0 ? 1 - Math.abs(S.blink - 1) : 0;
+    henryEye(S, dt);
     // how far gone it is: builds with the energy of the song over the first half minute, settles back in quiet parts
     const want = Math.min(1, .08 + .5 * Math.min(1.5, A.energy) + .25 * A.kick) * Math.min(1, S.t / 25);
     S.trip += (want - S.trip) * Math.min(1, dt * .6);
     const nw = (A.beats % 32 >= 16 && S.trip > .35) ? 1 : 0; S.nest += (nw - S.nest) * Math.min(1, dt * .9);
-    S.s1 += dt * (.25 + .5 * Math.min(2, A.midA)) * CFG.speed; S.swirl += dt * (.3 + 1.2 * Math.max(0, A.bassA - .6)) * CFG.speed;
-    S.u0[0] = S.gx; S.u0[1] = S.gy; S.u0[2] = pr; S.u0[3] = bl;
-    S.u1[0] = S.swirl; S.u1[1] = S.trip; S.u1[2] = S.nest; S.u1[3] = S.s1;
+    S.u1[1] = S.trip; S.u1[2] = S.nest;
   },
   draw(S) {
-    if (A.onKick) D.sprite(0, -.12, .17, 0, 1, .95, .9, .5 * CFG.punch, 0, .06, .05, 0);          // a ring of light off the eye
+    if (A.onKick) D.sprite(0, -.12, .185, 0, 1, .95, .9, .5 * CFG.punch, 0, .06, .05, 0);         // a ring of light off the eye
+    for (let i = Math.floor(A.trebA * Math.random() * 1.5); i > 0; i--) {                             // sparks off the border
+      const u = Math.random(), side = Math.floor(Math.random() * 3), ax = [0, -1.02, 1.02][side], ay = [.93, -.82, -.82][side], bx = [-1.02, 1.02, 0][side], by = [-.82, -.82, .93][side];
+      palJS(A.hue + rnd(0, .3), tmpC); D.sprite(ax + (bx - ax) * u, ay + (by - ay) * u, rnd(.015, .035), 0, tmpC.r, tmpC.g, tmpC.b, .8, 0, 0, .9, 1);
+    }
+  }
+});
+
+// ---------- Henry Deux ----------
+// Henry after dark. The same shapes as the painting (HENRY_GEOM), but traced as neon tubes over a near-black fill
+// that lets the trails show through: a magenta border, an electric-blue diamond and teeth, violet lids, a cyan
+// eyeball, acid-green lashes, and a pupil that is a black hole with an ember rim. The pupil does not rattle; it
+// turns slowly toward whichever band is loudest and snaps there when the song changes gear. Kicks tear the trail
+// into glitch rows and treble splits the colours apart.
+// It begins whole, its ghosts sinking into the eye. After a while it lets go: the neon prints of itself push out
+// past the edges, turn and ripple until the whole screen is the visualizer and Henry is only an echo in it. On a
+// cue it comes back whole, and the screen drains into the eye again.
+const DEUX_LIB = HENRY_GEOM + `
+const vec3 MAG=vec3(1.,.12,.72), CYAN=vec3(.1,.95,1.), VIO=vec3(.62,.3,1.), EBLUE=vec3(.25,.5,1.), ACID=vec3(.5,1.,.25), EMBER=vec3(1.,.36,.08), NYEL=vec3(1.,.9,.3);
+float almD(vec2 e, float w, float hu, float hl){                  // rough signed distance to an almond's edge (negative inside)
+  float ax=abs(e.x); if(ax>=w) return length(vec2(ax-w, e.y));
+  float xn=ax/w, k=almK(xn), h=e.y>0.?hu:hl, dk=1.3*xn*pow(max(1.-xn*xn,1e-3),-.35)*h/w;
+  return (abs(e.y)-h*k)/sqrt(1.+dk*dk); }
+float neon(float d, float w){ d=abs(d); return smoothstep(w, w*.35, d)+.45*exp(-d/(w*5.)); }   // a bright core and a soft halo
+// The form at p: neon light in rgb, coverage of the triangle in a; fill is the dark tint under the trails inside each region.
+vec4 wire(vec2 p, out vec3 fill){
+  float sd=triSD(p); fill=vec3(0.);
+  if(sd>.1) return vec4(0.);
+  float cov=smoothstep(.01,-.004,sd);
+  float gx=u0.x, gy=u0.y, pr=u0.z, blink=u0.w, sw=u1.x, s1=u1.w;
+  vec3 c=MAG*neon(sd+.067,.012)*1.3;                                                        // the border
+  float tt=p.y>DC.y ? ((AP.y-p.y)-abs(p.x)*.75)*6.5+s1+step(0.,p.x)*.5 : (abs(p.x)+(p.y-BY)*.28)*5.5+s1*.7;
+  fill=(p.y>DC.y ? vec3(.06,.012,.08) : vec3(.07,.025,.03))*(.55+.45*step(.5,fract(tt)));     // the stripes, as faint bands
+  float dd=abs(p.x-DC.x)/DW+abs(p.y-DC.y)/DH-1.;
+  if(dd<0.) fill=vec3(.015,.02,.05);
+  c+=EBLUE*neon(dd/2.43,.009)*.9;                                                            // the diamond
+  if(dd>0.&&dd<.34){ float s=p.x*9.+(p.y>DC.y?.5:0.), te=.3*tooth(s); c+=EBLUE*neon((dd-te)/2.43,.007)*.7; }   // the teeth
+  vec2 e=p-EC; float op=1.-blink*.92, ld=1.-blink*.7;
+  float dc=almD(e,.57,.345*ld,.283*ld); if(dc<0.) fill=vec3(.035,.006,.045);
+  c+=VIO*neon(dc,.008)*.8;                                                                   // the crease round the lids
+  if(e.y>0.) c+=MAG*neon(almD(e,.53,.303*ld,.267*ld),.006)*.55;                              // the line under the yellow strip
+  float db=almD(e,EW,EU*op,EL*op);
+  if(db<0.){ fill=vec3(.01,.04,.05); c+=ACID*lashes(e,sw,beat)*1.3; }
+  c+=CYAN*neon(db,.009)*1.2;                                                                 // the eyeball
+  vec2 td=(e-vec2(-.46,0.))/vec2(.075,.045); c+=NYEL*neon((dot(td,td)-1.)*.04,.007)*.6*step(db,.02);   // the tear duct
+  if(db<0.){
+    vec2 g=e-vec2(gx,gy); float gr=length(g);
+    c+=vec3(.4,.5,.65)*neon(gr-GR,.006)*.45;                                                 // the dome's rim, faint
+    if(gr<pr) fill=vec3(0.);                                                                 // the pupil is a hole
+    c+=EMBER*neon(gr-pr,.009)*(1.3+.6*beat)+EMBER*.03*smoothstep(pr,pr*.1,gr)*(.4+.6*beat); }
+  return vec4(c,cov); }
+`;
+
+PRESETS.push({
+  name: 'Henry Deux', accent: '#00f0ff', cam: .7,
+  warp: DEUX_LIB + `
+  vec3 warp(vec2 p){
+    float form=u1.y, glitch=u1.z, chaos=1.-form;
+    float row=floor(p.y*22.+seed.z*9.), tk=floor(t*14.);
+    float jump=(hash(vec2(row,tk))-.5)*.3*glitch*step(.55,hash(vec2(row*1.7,tk+3.)));       // a kick tears the picture into rows that jump sideways
+    vec2 q=p+vec2(jump,0.);
+    // whole: the ghosts sink into the eye. Gone: everything pushes out past the edges and turns, with ripples running through it
+    vec2 ctr=EC*form;
+    float ex=mix(1.012+.02*kick, .982-.02*kick-.005*(bassA-1.), chaos);
+    q=ctr+rot(mix(.004*sin(mt*.27), .012*sin(mt*.23)+.014*(midA-1.), chaos))*(q-ctr)*ex;
+    q+=(vec2(fbm(p*2.2+vec2(mt*.2,seed.x*5.)), fbm(p*2.2+vec2(seed.y*5.,-mt*.17)))-.5)*(.004+.03*chaos);
+    q=mix(p,q,spd);
+    vec3 c=mix(P(q), B(q), mix(.06,.015,chaos));                                             // gone, the echoes stay sharp as they travel
+    vec3 fill; vec4 w=wire(p, fill);
+    c+=w.rgb*(.06+.12*kick)*(.3+.7*form);                                                   // the neon form prints into the trail, fainter once it has let go
+    c*=1.-.7*form*smoothstep(u0.z+.03, u0.z, length(p-EC-u0.xy));                            // whole, the pupil swallows whatever sinks into it
+    c=hueRot(c, .003+.004*chaos);
+    return c*DK(mix(.955,.979,chaos)); }`,
+  comp: DEUX_LIB + `
+  vec3 comp(vec2 p){
+    float form=u1.y, glitch=u1.z, chaos=1.-form;
+    vec2 q=p*(1.-.02*kick);
+    vec3 tr=ca(q, .005+.02*trebA*chaos+.04*glitch)*1.1+glow(q)*(.5+.6*form);                 // the trails, colours split by treble and glitches
+    vec3 fill; vec4 w=wire(p, fill);
+    vec3 c=mix(tr, tr*.3+fill, w.a*form);                                                   // whole, the fills dim the trail inside the form
+    c+=w.rgb*(1.1+.2*beat)*form;                                                            // the crisp neon fades as it lets go, and returns with it
+    c*=.88+.12*sin(p.y*res.y*1.2+t*2.5);                                                    // scanlines
+    c+=vec3(.004,.006,.012);
+    return c*vig(p); }`,
+  init(S) { S.gx = 0; S.gy = 0; S.tx = 0; S.ty = 0; S.snap = 0; S.blink = 0; S.blinkT = 0; S.nextBlink = rnd(5, 12); S.blinkSpd = 2.5; S.glitch = 0; S.sw = 0; S.s1 = 0; S.mark = -1; henryArcInit(S); },
+  update(S, dt) {
+    if (henryArc(S, dt)) S.glitch = 1.5;                                                       // it comes back with a tear
+    // the pupil looks toward the loudest band: bass to the left, mids ahead, treble to the right. It glides there, and snaps on a swing.
+    const b = A.bassA, m = A.midA, tr = A.trebA, mx = Math.max(b, m, tr);
+    if (A.onSwing || (A.onBeat && A.beats % 4 === 0 && A.beats !== S.mark)) { S.mark = A.beats; S.tx = (mx === b ? -1 : mx === tr ? 1 : 0) * .055 + rnd(-.01, .01); S.ty = rnd(-.045, .045); S.snap = A.onSwing ? 1 : 0; }
+    const k = Math.min(1, dt * (S.snap ? 30 : 2.2)); S.gx += (S.tx - S.gx) * k; S.gy += (S.ty - S.gy) * k; S.snap *= Math.max(0, 1 - dt * 8);
+    const pr = .08 + .045 * Math.min(2, A.bassA) * .5 + .02 * Math.min(1.5, A.kick);        // bass dilates it
+    // blinks: slow and rare; a swing closes the shutter for longer
+    S.blinkT += dt;
+    if (S.blink <= 0 && (S.blinkT > S.nextBlink || A.onSwing)) { S.blink = 1e-3; S.blinkT = 0; S.nextBlink = rnd(6, 14); S.blinkSpd = A.onSwing ? 1.3 : 2.5; }
+    if (S.blink > 0) { S.blink += dt * S.blinkSpd; if (S.blink >= 2) S.blink = 0; }
+    const bl = S.blink > 0 ? 1 - Math.abs(S.blink - 1) : 0;
+    if (A.onKick) S.glitch = Math.max(S.glitch, Math.min(1.5, CFG.punch)); S.glitch *= Math.max(0, 1 - dt * 7);
+    S.sw += dt * (.15 + .35 * Math.min(2, A.midA)) * CFG.speed; S.s1 += dt * (.2 + .4 * Math.min(2, A.midA)) * CFG.speed;
+    S.u0[0] = S.gx; S.u0[1] = S.gy; S.u0[2] = pr; S.u0[3] = bl;
+    S.u1[0] = S.sw; S.u1[1] = S.form; S.u1[2] = S.glitch; S.u1[3] = S.s1;
+  },
+  draw(S) {
+    // the waveform runs round the inside of the frame as a cyan thread, one side per band; once Henry has let go the
+    // frame grows past the screen and turns, so the threads sweep across the whole picture
+    const chaos = 1 - S.form, sc = 1 + 2.2 * chaos, ang = S.t * .12 * chaos, ca = Math.cos(ang), sa = Math.sin(ang), asp = D.aspect;
+    const V = [[0, .93], [-1.02, -.82], [1.02, -.82]].map(([x, y]) => [(x * ca - y * sa) * sc, (x * sa + y * ca) * sc]), lv = [A.trebA, A.bassA, A.midA];
+    for (let k = 0; k < 3; k++) {
+      const [ax, ay] = V[k], [bx, by] = V[(k + 1) % 3], len = Math.hypot(bx - ax, by - ay), nx = -(by - ay) / len, ny = (bx - ax) / len, amp = (.018 + .03 * Math.min(2, lv[k])) * sc;
+      D.line(130, (i, u, p) => { const w = sampleWave((u * .8 + k * .3) % 1), e = Math.sin(u * Math.PI), o = .1 + w * amp * e; p.x = ax + (bx - ax) * u + nx * o; p.y = ay + (by - ay) * u + ny * o; p.r = .15; p.g = .85; p.b = 1; }, { w: .004, gain: (.35 + .35 * Math.min(2, lv[k])) * (.3 + .7 * S.form), core: .8 });   // gone, the long trail does the work, so the threads ease off
+    }
+    // the spectrum stands in the stripes under the diamond, magenta; gone, it stands along the bottom of the screen
+    const sx = Math.min(.86 * sc, asp * .98), sy = -.76 - .16 * chaos;
+    D.line(160, (i, u, p) => { const s = sampleSpec(.03 + mirrorU(u) * .9), e = Math.sin(u * Math.PI); p.x = (u * 2 - 1) * sx; p.y = sy + s * .14 * (.4 + .6 * e) * (1 + 1.5 * chaos); p.r = 1; p.g = .15 + .5 * s; p.b = .7; }, { w: .005, gain: (.35 + .3 * A.midA) * (.5 + .5 * S.form), core: .6 });
+    if (A.onKick) D.sprite(0, -.12, .2 + .5 * chaos, 0, 1, .4, .12, .6 * CFG.punch, 0, .05, .05, 0);      // an ember shock ring off the eye
+    for (let i = Math.floor(A.trebA * Math.random() * 1.5); i > 0; i--) {                                 // sparks off the frame, cyan and magenta
+      const u = Math.random(), side = Math.floor(Math.random() * 3), [ax, ay] = V[side], [bx, by] = V[(side + 1) % 3], mg = Math.random() < .5;
+      D.sprite(ax + (bx - ax) * u, ay + (by - ay) * u, rnd(.012, .03), 0, mg ? 1 : .2, mg ? .2 : .9, 1, .8, 0, 0, .9, 1);
+    }
+  }
+});
+
+// ---------- Henry 3 ----------
+// The painting melts. It is printed into the fluid solver and holds there for a while, barely moving. Then it lets
+// go: the paint runs down on bass, bursts out of the eye on a kick, big eddies wander over the screen on mids,
+// treble spatters it, and the whole picture slowly swells outward from the eye until the screen is running
+// paint from edge to edge. On a cue (a swing, a 32-beat line, or the timer) the painting snaps back whole in the
+// middle of the mess, holds, and melts again. The eye keeps its googly rattle and its blinks throughout.
+PRESETS.push({
+  name: 'Henry 3', accent: '#ffa94d', cam: .7, fluid: { vort: 9, damp: .6 },
+  warp: HENRY_LIB + `
+  vec3 warp(vec2 p){
+    float stamp=u1.y, z=u1.z, swell=z<1.?z:0.;
+    vec2 q=p-V(p)*dt;                                                     // the paint rides the fluid
+    q=EC+(q-EC)*(1.-(.002+.004*kick)*swell);                              // and, once let go, swells out from the eye to fill the screen
+    vec3 c=mix(P(q), B(q), .003);
+    vec4 d=design(p);
+    c=mix(c, d.rgb*1.15, d.a*stamp);                                      // the painting prints itself in: whole at a snap, a little every frame while it holds
+    return c*DK(.9997)/(1.+.004*lum(c)); }`,
+  comp: HENRY_LIB + `
+  vec3 comp(vec2 p){
+    float z=u1.z, vis=z>=1.?z-1.:0.;
+    vec2 e=vec2(.012,0.);
+    vec2 g=vec2(lum(B(p+e.xy))-lum(B(p-e.xy)), lum(B(p+e.yx))-lum(B(p-e.yx)));
+    vec3 paint=pow(max(P(p),0.),vec3(.8)); paint=max(mix(vec3(lum(paint)), paint, 1.35), 0.);   // thin paint is lifted and kept vivid where colours have mixed
+    paint*=clamp(1.+dot(g,vec2(-.6,.7))*4., .5, 1.6);                                            // side light gives it body
+    vec3 c=paint*1.1+glow(p)*.5+vec3(.006,.004,.012);
+    vec4 d=design(p);
+    c=mix(c, d.rgb*(1.05+.15*beat), d.a*vis);                              // the crisp painting shows at the snap
+    return c*vig(p); }`,
+  init(S) { henryInit(S); henryArcInit(S); S.snap = 1; S.vis = 1; S.flash = 1; },
+  update(S, dt) {
+    henryEye(S, dt);
+    if (henryArc(S, dt)) { S.snap = 1; S.vis = 1; S.flash = 1; }
+    S.snap *= Math.max(0, 1 - dt * 10); S.vis *= Math.max(0, 1 - dt * 2.5);
+    // the swell is strongest in the first seconds after letting go and tapers off, so the paint fills the screen and then stays
+    const swell = (1 - S.form) * (.15 + .85 * Math.max(0, 1 - Math.max(0, S.arcT - 2) / 10));
+    // u1.z carries the snap's crisp overlay (1..2) while it lasts, and the swell (0..1) the rest of the time; they never overlap
+    S.u1[1] = Math.min(1, S.snap + .08 * S.form * S.form); S.u1[2] = S.vis > .01 ? 1 + S.vis : swell;
+  },
+  force(S, dt) {
+    const chaos = 1 - S.form, asp = D.aspect, mid = Math.min(2, A.midA), bass = Math.min(2, A.bassA);
+    // while it holds, only a tremor; once it has let go, the whole screen is stirred
+    const down = (.04 + .08 * bass) * dt * (.25 + 1.25 * chaos);                                            // melting runs downhill, harder on bass
+    for (let j = 0; j < 5; j++) { const x = (j - 2) * .42, y = -.4 + .3 * Math.sin(S.mt * .4 + j * 1.9); F.splat(x, y, (Math.random() - .5) * .3 * down, -down, .22); }
+    if (A.onKick) F.burst(0, -.12, (.3 + .15 * A.bass) * (1 + chaos), .14, 10);
+    const sw = (.04 + .25 * mid) * dt;
+    F.swirl(0, .55, sw * (.5 + chaos), .25); F.swirl(-.6, -.55, -sw * (.5 + chaos), .25); F.swirl(.6, -.55, sw * (.5 + chaos), .25);   // the painting's corners
+    for (let k = 0; k < 3; k++) {                                                                               // gone: three big eddies wander over the whole screen
+      const a = S.mt * (.17 + .05 * k) + k * 2.1, x = Math.sin(a) * asp * .75, y = Math.cos(a * 1.3 + k) * .7;
+      F.swirl(x, y, (k % 2 ? -1 : 1) * sw * 3 * chaos, .45);
+    }
+    for (let i = Math.floor(A.trebA * 1.5 * Math.random()); i > 0; i--) { const a = rnd(0, TAU); F.splat(rnd(-1, 1) * asp, rnd(-1, 1), Math.cos(a) * .1, Math.sin(a) * .1, .06); }
+  },
+  draw(S) {
+    if (S.flash > .03) { D.sprite(0, -.12, .2 + .35 * (1 - S.flash), 0, 1, .9, .7, .45 * S.flash, 0, .05, .06, 0); S.flash *= .86; }   // a ring of light marks the snap
     for (let i = Math.floor(A.trebA * Math.random() * 1.5); i > 0; i--) {                             // sparks off the border
       const u = Math.random(), side = Math.floor(Math.random() * 3), ax = [0, -1.02, 1.02][side], ay = [.93, -.82, -.82][side], bx = [-1.02, 1.02, 0][side], by = [-.82, -.82, .93][side];
       palJS(A.hue + rnd(0, .3), tmpC); D.sprite(ax + (bx - ax) * u, ay + (by - ay) * u, rnd(.015, .035), 0, tmpC.r, tmpC.g, tmpC.b, .8, 0, 0, .9, 1);
@@ -1932,7 +2156,7 @@ const DETAIL = [['Auto', 1080], ['720p', 720], ['1080p', 1080], ['1440p', 1440],
 // Which 3D spaces suit which scene (1 tunnel, 2 dome, 3 floor). Scenes not listed are either flat or already 3D.
 const SPACES = { 'Plasma Tide': [1, 2], 'Prism Cathedral': [2, 3], 'Aurora Veil': [2], 'Ink Bloom': [3], 'Solar Petals': [1], 'Julia Garden': [1, 2, 3], 'Silk Ribbons': [1],
   'Neon Horizon': [2], 'Velvet Smoke': [2], 'Oil Slick': [3], 'Acrylic Pour': [3], 'Glass Tide': [1], 'Pool Floor': [3], 'Quicksilver': [3], 'Petri': [2, 3], 'Maelstrom': [3, 1], 'Hall of Mirrors': [2],
-  'Slime Mould': [2, 3], 'Lichtenberg': [2], 'Cathode': [1], 'Deep Field': [1, 3], 'Loom': [1, 3], 'Henry': [2] };
+  'Slime Mould': [2, 3], 'Lichtenberg': [2], 'Cathode': [1], 'Deep Field': [1, 3], 'Loom': [1, 3], 'Henry': [2], 'Henry Deux': [2], 'Henry 3': [2, 3] };
 let downProg, upProg;
 
 function build() {
@@ -1979,7 +2203,7 @@ function makeState(P) { const S = { P, t: 0, mt: Math.random() * 60, seed: [Math
 function label() {
   $('nameTxt').textContent = cur.P.name;
   $('nameSub').textContent = 'Scene ' + (cur.i + 1) + ' of ' + PRESETS.length + (cur.stage ? ' · ' + STAGES[cur.stage] : '');
-  const b = $('bSpace'); if (b) { b.disabled = !cur.P.stages.length; b.textContent = 'Space: ' + STAGES[cur.stage || 0]; }
+  const g = $('spaceBtns'); if (g) [...g.children].forEach((b, i) => { b.disabled = i > 0 && !cur.P.stages.includes(i); b.setAttribute('aria-pressed', String((cur.stage || 0) === i)); });
 }
 function go(i, instant) {
   i = (i + PRESETS.length) % PRESETS.length;
@@ -2098,11 +2322,15 @@ $('bFull').onclick = fullscreen;
 $('bDash').onclick = () => setDash(!dash.classList.contains('open'));
 $('dashClose').onclick = () => setDash(false);
 $('bSpaces').onclick = () => { CFG.spaces = !CFG.spaces; if (!CFG.spaces && cur.stage) cur.stage = 0; syncDash(); saveCfg(); };
-$('bSpace').onclick = () => cycleStage();
 $('bFavOnly').onclick = () => { CFG.favOnly = !CFG.favOnly; syncDash(); saveCfg(); };
-$('bReset').onclick = () => { Object.assign(CFG, JSON.parse(JSON.stringify(DEFAULTS))); setDetail(CFG.detail); syncDash(); saveCfg(); };
+$('bReset').onclick = () => { const keep = { fav: CFG.fav, hide: CFG.hide, micId: CFG.micId }; Object.assign(CFG, JSON.parse(JSON.stringify(DEFAULTS)), keep); setDetail(CFG.detail); syncDash(); saveCfg(); };   // the scene lists survive a reset
+$('bClear').onclick = () => { CFG.fav = {}; CFG.hide = {}; syncDash(); saveCfg(); };
 $('micPick').onchange = e => { CFG.micId = e.target.value; saveCfg(); choose(useMic); };
 function setAuto(v) { CFG.auto = v; sinceSwitch = 0; syncDash(); saveCfg(); }
+function setStage(i) { if (i && !cur.P.stages.includes(i)) return; cur.stage = i; label(); }
+// Random and Default for one section of the drawer. Random stays inside each slider's own band (the last column of ROWS).
+function sectionDefault(secId) { for (const r of ROWS) if (r[0] === secId) CFG[r[1]] = DEFAULTS[r[1]]; syncDash(); saveCfg(); }
+function sectionRandom(secId) { for (const [sec, key, , , , stp, , , band] of ROWS) if (sec === secId && band) CFG[key] = +(Math.round((band[0] + Math.random() * (band[1] - band[0])) / stp) * stp).toFixed(3); syncDash(); saveCfg(); }
 function setCam(on) { if (on) CFG.cam = CAM.lastAmt || 1; else { CAM.lastAmt = CFG.cam || 1; CFG.cam = 0; } syncDash(); saveCfg(); }
 function setDash(open) { dash.classList.toggle('open', open); document.body.classList.toggle('dash-open', open); $('bDash').setAttribute('aria-pressed', String(open)); poke(); }
 function fullscreen() {
@@ -2111,20 +2339,20 @@ function fullscreen() {
   else if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
 }
 
-// Settings drawer: sliders are built from this table so each one is a single line.
+// Settings drawer: sliders are built from this table so each one is a single line. The last column is the band Random picks from.
 const pct = x => Math.round(x * 100) + '%', sec = x => (x >= 10 ? Math.round(x) : x.toFixed(1)) + ' s';
 const ROWS = [
-  ['secMusic', 'intensity', 'Intensity', 0, 2.5, .05, pct, 'How hard the music drives everything'],
-  ['secMusic', 'speed', 'Speed', .25, 2.5, .05, pct, 'How fast things flow and travel'],
-  ['secMusic', 'punch', 'Beat punch', 0, 2, .05, pct, 'How hard kicks and beats hit'],
-  ['secMusic', 'bass', 'Bass', 0, 2, .05, pct, 'How much the low end counts'],
-  ['secMusic', 'mid', 'Mids', 0, 2, .05, pct, 'How much the middle counts'],
-  ['secMusic', 'treb', 'Treble', 0, 2, .05, pct, 'How much the high end counts'],
-  ['secPic', 'bright', 'Brightness', .3, 1.3, .05, pct, 'Overall brightness. Lower it for a big screen in a dark room'],
-  ['secPic', 'trail', 'Trails', .5, 2.5, .05, pct, 'How long things linger before fading'],
-  ['secPic', 'glow', 'Glow', 0, 2, .05, pct, 'The soft bloom around bright areas'],
-  ['secPic', 'sat', 'Saturation', 0, 1.5, .05, pct, 'From greyscale to vivid'],
-  ['secPic', 'hueShift', 'Colour shift', 0, 1, .01, x => Math.round(x * 360) + '°', 'Rotate every colour around the wheel'],
+  ['secMusic', 'intensity', 'Intensity', 0, 2.5, .05, pct, 'How hard the music drives everything', [.6, 1.6]],
+  ['secMusic', 'speed', 'Speed', .25, 2.5, .05, pct, 'How fast things flow and travel', [.5, 1.8]],
+  ['secMusic', 'punch', 'Beat punch', 0, 2, .05, pct, 'How hard kicks and beats hit', [.5, 1.6]],
+  ['secMusic', 'bass', 'Bass', 0, 2, .05, pct, 'How much the low end counts', [.5, 1.5]],
+  ['secMusic', 'mid', 'Mids', 0, 2, .05, pct, 'How much the middle counts', [.5, 1.5]],
+  ['secMusic', 'treb', 'Treble', 0, 2, .05, pct, 'How much the high end counts', [.5, 1.5]],
+  ['secPic', 'bright', 'Brightness', .3, 1.3, .05, pct, 'Overall brightness. Lower it for a big screen in a dark room', [.7, 1.1]],
+  ['secPic', 'trail', 'Trails', .5, 2.5, .05, pct, 'How long things linger before fading', [.6, 2]],
+  ['secPic', 'glow', 'Glow', 0, 2, .05, pct, 'The soft bloom around bright areas', [.3, 1.8]],
+  ['secPic', 'sat', 'Saturation', 0, 1.5, .05, pct, 'From greyscale to vivid', [.6, 1.4]],
+  ['secPic', 'hueShift', 'Colour shift', 0, 1, .01, x => Math.round(x * 360) + '°', 'Rotate every colour around the wheel', [0, 1]],
   ['secCam', 'cam', 'Movement', 0, 2, .05, x => x === 0 ? 'Off' : pct(x), 'How far the camera swings, turns and travels. 0 locks it'],
   ['secScenes', 'sceneSec', 'Each scene', 10, 120, 5, sec, 'How long before Auto moves on'],
   ['secScenes', 'transSec', 'Crossfade', .5, 6, .1, sec, 'How long one scene takes to melt into the next']
@@ -2138,6 +2366,9 @@ function buildDash() {
     row.append(sp, inp, out); row._sync = () => { inp.value = CFG[key]; out.textContent = fmt(CFG[key]); };
     const s = $(secId), anchor = s.querySelector('.btns'); if (secId === 'secScenes') s.insertBefore(row, s.querySelector('.hint')); else if (anchor) s.insertBefore(row, anchor); else s.appendChild(row);
   }
+  dash.querySelectorAll('[data-rand]').forEach(b => { b.onclick = () => sectionRandom(b.dataset.rand); });
+  dash.querySelectorAll('[data-def]').forEach(b => { b.onclick = () => sectionDefault(b.dataset.def); });
+  STAGES.forEach((name, i) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = name; b.title = i ? 'Show this scene as a ' + name.toLowerCase() : 'Show this scene flat'; b.onclick = () => setStage(i); $('spaceBtns').appendChild(b); });
   DETAIL.forEach(([name], i) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = name; b.onclick = () => { setDetail(i); syncDash(); }; $('detailBtns').appendChild(b); });
   PRESETS.forEach((P, i) => {
     const li = document.createElement('li'), g = document.createElement('button'), f = document.createElement('button'), h = document.createElement('button');
@@ -2193,6 +2424,7 @@ window.addEventListener('keydown', e => {
   else if (k === 'q') { setDetail(CFG.detail + 1); syncDash(); }
   else if (k === 'd') setDash(!dash.classList.contains('open'));
   else if (k === 'v') cycleStage();
+  else if (k === 'r') sectionRandom('secPic');
   else if (k === 's' && startEl.hidden) showStart('');
   else if (k === 'escape') { if (dash.classList.contains('open')) setDash(false); else if (!startEl.hidden && A.live) hideStart(); }
   else if (k >= '0' && k <= '9') { const n = k === '0' ? 9 : +k - 1; if (n < PRESETS.length) go(n); }
@@ -2219,7 +2451,7 @@ if (!gl) {
 }
 // Hook for automated checks: steps the renderer on a stand-in signal with no real audio.
 window.__viz = {
-  names: PRESETS.map(p => p.name), A, CAM, CFG,
+  names: PRESETS.map(p => p.name), A, CAM, CFG, get cur() { return cur; },
   step(n, dt) { testMode = true; dt = dt || 1 / 60; resize(); for (let i = 0; i < n; i++) { clock += dt; fakeFeatures(clock, dt); render(dt); } gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4)); },
   go(i, stage) { go(i, true); if (stage != null) { cur.stage = stage; label(); } }, cut(i) { go(i, false); }, live() { testMode = false; }, sync: () => syncDash()
 };

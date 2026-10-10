@@ -1,12 +1,13 @@
 # dsViz
 
-A music visualizer that runs in the browser. It listens to whatever is playing and drives 29 scenes with it: feedback warps in the Milkdrop tradition, fluid, ripple and reaction-diffusion simulation, crowds of GPU agents (slime mould, a starling flock), a fractal dive, and 3D spaces the camera flies through.
+A music visualizer that runs in the browser. It listens to whatever is playing and drives 31 scenes with it: feedback warps in the Milkdrop tradition, fluid, ripple and reaction-diffusion simulation, crowds of GPU agents (slime mould, a starling flock), a fractal dive, and 3D spaces the camera flies through.
 
 Everything is one file, `index.html`. There is nothing to install.
 
 | | |
 |---|---|
 | ![Henry](docs/henry.png) | ![Slime Mould](docs/slime-mould.png) |
+| ![Henry Deux](docs/henry-deux.png) | ![Henry 3](docs/henry-3.png) |
 | ![Moon Pool](docs/moon-pool.png) | ![Oil Slick](docs/oil-slick.png) |
 | ![Ridgeline](docs/ridgeline.png) | ![Velvet Smoke](docs/velvet-smoke.png) |
 
@@ -14,7 +15,7 @@ Everything is one file, `index.html`. There is nothing to install.
 
 Open `index.html` in Chrome or Edge on a computer, then choose where the music comes from:
 
-- **Capture tab or system audio.** Pick the tab or screen that is playing, and switch on "Share audio" in the browser's dialog before confirming. Without that switch the visualizer hears nothing.
+- **Capture tab or system audio.** Pick the window, tab or screen that is playing, then tick the "Share audio" box at the bottom of the browser's dialog before confirming. Without that box the visualizer hears nothing; the browser owns the dialog, so the page cannot tick it for you. To skip the dialog altogether, pick a loopback input (Windows "Stereo Mix", or a virtual cable) as the Microphone: dsViz remembers the choice.
 - **Play audio files.** Choose files, or drop them anywhere on the page.
 - **Microphone.** Listens to the room. Pick which microphone under Settings.
 - **Demo beat.** A built-in loop, to see how it reacts.
@@ -35,6 +36,7 @@ The control strip appears when you move the mouse and fades when you stop.
 | D | Open or close Settings |
 | C | Camera movement, on or off |
 | V | Move the current scene into its next 3D space |
+| R | Random Picture settings: a new look |
 | Q | Next Detail level |
 | S | Change the audio source |
 | Esc | Close Settings or the source card |
@@ -44,11 +46,11 @@ The control strip appears when you move the mouse and fades when you stop.
 The Settings drawer (D) holds everything adjustable. Settings are saved in the browser, per address.
 
 - **Sound in:** a live input meter, and the microphone picker.
-- **Music:** Intensity, Speed, Beat punch, and separate Bass, Mids and Treble.
-- **Picture:** Brightness, Trails, Glow, Saturation, Colour shift.
-- **Camera:** how far it moves, and whether scenes may wrap into 3D spaces (tunnel, dome, floor).
+- **Music:** Intensity, Speed, Beat punch, and separate Bass, Mids and Treble. Random and Default buttons act on the whole section.
+- **Picture:** Brightness, Trails, Glow, Saturation, Colour shift, with their own Random and Default.
+- **Camera:** how far it moves, whether scenes may wrap into 3D spaces (tunnel, dome, floor), and which space the current scene is in.
 - **Detail:** how sharply the picture is rendered. Auto lowers itself if the computer struggles.
-- **Scenes:** time per scene, crossfade length, and Fav and Hide for each scene.
+- **Scenes:** time per scene, crossfade length, and Fav and Hide for each scene. Reset all settings keeps the Fav and Hide lists; Clear Fav and Hide empties them.
 
 ## Scenes
 
@@ -81,6 +83,8 @@ The Settings drawer (D) holds everything adjustable. Settings are saved in the b
 27. Deep Field
 28. Loom
 29. Henry
+30. Henry Deux
+31. Henry 3
 
 ## How it works
 
@@ -94,7 +98,7 @@ Some scenes lean on a simulation that runs alongside: a fluid solver whose veloc
 
 A scene can live in one of four spaces: flat (the picture on a plane the camera orbits), or wrapped around the camera as a tunnel, a dome or a floor. Which spaces suit which scene is a table in `07-main.js`; a scene with a horizon can set `panorama: true` so the dome keeps its sky up and its ground down.
 
-Henry is different from the rest: a painting rebuilt from scratch in a shader, so that every part of it can move with the music.
+Henry is different from the rest: a painting rebuilt from scratch in a shader, so that every part of it can move with the music. Henry Deux traces the same shapes as neon over a dark trail, with a pupil that turns toward the loudest band. Henry 3 prints the painting into the fluid solver and lets it melt until the next eighth beat snaps it back.
 
 Sound is analysed into bass, mids and treble, each measured against its own recent average, so a quiet source and a loud one drive the picture equally hard. Kicks and beats are detected from sudden rises in the spectrum.
 
@@ -117,7 +121,9 @@ python3 build.py
 | `04b-fluid.js` | Fluid solver and the camera |
 | `04c-agents.js` | GPU agents: a float texture of positions, updated and drawn by each scene's shaders |
 | `05-presets-a.js` to `06f-presets-g.js` | The scenes |
-| `06g-henry.js` | Henry |
+| `06g-henry.js` | Henry, and the shapes the other two Henrys share |
+| `06h-henry-deux.js` | Henry Deux |
+| `06i-henry-3.js` | Henry 3 |
 | `07-main.js` | Render loop and scene switching |
 | `08-ui.js` | Controls and the Settings drawer |
 
