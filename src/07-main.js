@@ -49,12 +49,12 @@ function useScene(prog, S, prevTex, blurTex) {
   gl.uniform1f(u.spd, CFG.speed * frn); gl.uniform1f(u.dkx, frn / CFG.trail);     // Speed and Trails reach every warp shader here
   gl.uniform4fv(u.cam, camFor(S)); gl.uniform1f(u.fit, camFit(S, W / H)); gl.uniform1i(u.stage, S.stage || 0); gl.uniform4fv(u.fly, flyFor(S, clock));
   gl.uniform4f(u.look, CFG.bright, CFG.sat, CFG.hueShift, CFG.glow);
-  gl.uniform1f(u.pano, S.P.panorama ? 1 : 0); gl.uniform4fv(u.u0, S.u0); gl.uniform4fv(u.u1, S.u1);
+  gl.uniform1f(u.pano, S.P.panorama ? 1 : 0); gl.uniform4fv(u.u0, S.u0); gl.uniform4fv(u.u1, S.u1); gl.uniform4fv(u.u2, S.u2);
   if (S.P.ag && S.P.ag.a) { bindTex(5, S.P.ag.a.tex); gl.uniform1i(u.agentT, 5); }
   for (const k of UNI) if (u[k]) gl.uniform1f(u[k], k === 't' ? S.t : k === 'mt' ? S.mt : A[k]);
 }
 function pickStage(P) { return CFG.spaces && CFG.cam > 0 && P.stages.length && Math.random() < .55 ? P.stages[Math.floor(Math.random() * P.stages.length)] : 0; }
-function makeState(P) { const S = { P, t: 0, mt: Math.random() * 60, seed: [Math.random(), Math.random(), Math.random(), Math.random()], stage: pickStage(P), u0: new Float32Array(4), u1: new Float32Array(4) }; if (P.init) P.init(S); return S; }
+function makeState(P) { const S = { P, t: 0, mt: Math.random() * 60, seed: [Math.random(), Math.random(), Math.random(), Math.random()], stage: pickStage(P), u0: new Float32Array(4), u1: new Float32Array(4), u2: new Float32Array(4) }; if (P.init) P.init(S); return S; }
 function label() {
   $('nameTxt').textContent = cur.P.name;
   $('nameSub').textContent = 'Scene ' + (cur.i + 1) + ' of ' + PRESETS.length + (cur.stage ? ' · ' + STAGES[cur.stage] : '');

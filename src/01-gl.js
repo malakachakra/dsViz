@@ -15,7 +15,7 @@ uniform float t, mt, bass, mid, treb, bassA, midA, trebA, beat, kick, vol, hue, 
 uniform vec4 seed;
 uniform sampler2D velT, auxT; uniform float dt, ax, fit; uniform vec4 cam;
 uniform float spd, dkx, pano; uniform int stage; uniform vec4 fly, look;
-uniform sampler2D agentT; uniform vec4 u0, u1;                   // agent positions (scenes with agents), and two free vec4s each scene sets as it likes
+uniform sampler2D agentT; uniform vec4 u0, u1, u2;               // agent positions (scenes with agents), and three free vec4s each scene sets as it likes
 #define DK(x) pow(x, dkx)       // a per-frame fade, corrected for frame rate and the Trails setting
 #define PI 3.14159265
 #define TAU 6.2831853

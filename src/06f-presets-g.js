@@ -19,28 +19,46 @@ PRESETS.push({
     vec3 bolt=P(p); c+=bolt*1.6+glow(p)*1.4*mix(vec3(.7,.75,1.), pal(hue+.62), .4);
     c+=vec3(.9,.92,1.)*fl*.08;                                                             // the whole sky flickers
     return c*vig(p); }`,
-  init(S) { S.tips = []; S.flash = 0; S.fx = 0; S.fy = .3; S.pend = 0; },
-  spawn(S, x, y, tx, ty, w, life, h) { if (S.tips.length < 120) S.tips.push({ x, y, px: x, py: y, a: Math.atan2(ty - y, tx - x), tx, ty, w, life, h, age: 0 }); },
+  init(S) { S.tips = []; S.flash = 0; S.fx = 0; S.fy = .3; },
+  // Every bolt gets its own target, stride (sp) and thickness (w), so no two are alike. Its life is enough to reach
+  // the target (reach < 1 leaves it short of there) and its rate (steps per frame) comes from that, so every bolt
+  // grounds about a sixth of a second after the beat that launched it, however far it has to go.
+  spawn(S, x, y, tx, ty, w, h, sp, reach) {
+    if (S.tips.length >= 120) return;
+    sp = sp || 1; const steps = Math.hypot(tx - x, ty - y) / (.06 * sp * (.6 + .5 * w) * .85) * (reach || 1.3);
+    S.tips.push({ x, y, px: x, py: y, a: Math.atan2(ty - y, tx - x), tx, ty, w, life: Math.max(.3, steps * .035), h, sp, rate: Math.min(4, Math.max(1, Math.round(steps / 10))), age: 0 });
+  },
+  big(S) {       // one bolt that spans the whole sky: corner to corner, cloud to cloud right across, or up from the ground
+    const asp = D.aspect, kind = Math.random(), sd = Math.random() < .5 ? -1 : 1;
+    if (kind < .45) this.spawn(S, sd * asp * rnd(.6, 1.), 1.05, -sd * asp * rnd(.7, 1.05), -1.05, 1.3, A.hue + rnd(-.05, .05), 1.15);
+    else if (kind < .8) this.spawn(S, sd * asp * 1.04, rnd(.1, .9), -sd * asp * 1.05, rnd(-.2, .9), 1., A.hue + .5 + rnd(-.05, .05), 1.1);
+    else this.spawn(S, rnd(-.8, .8) * asp, -1.04, rnd(-.6, .6) * asp, 1.05, 1.1, A.hue + .25, 1.1);
+  },
   update(S, dt) {
     const asp = D.aspect;
     S.flash *= Math.max(0, 1 - dt * 7);
-    if (A.onKick) { const x = rnd(-.8, .8) * asp, n = 1 + (A.bass > 1.8 ? 1 : 0); for (let i = 0; i < n; i++) this.spawn(S, x + rnd(-.1, .1), 1.05, x + rnd(-.5, .5) * asp, rnd(-1.1, -.6), 1, 1, A.hue + rnd(-.05, .05)); }
-    if (Math.random() < dt * (.3 + 2.2 * Math.min(2, A.trebA))) { const sd = Math.random() < .5 ? -1 : 1; this.spawn(S, sd * asp * 1.02, rnd(-.6, .9), sd * asp * rnd(-.2, .5), rnd(-.9, .8), .35, .5, A.hue + .5); }
-    if (A.onBeat && Math.random() < .35) this.spawn(S, rnd(-.9, .9) * asp, rnd(-.3, .9), rnd(-.5, .5) * asp, -1.1, .55, .7, A.hue + .25);
+    if (A.onKick) {      // every kick: a real bolt from the sky that grounds; on the bar line, a huge kick or a change of gear, one across the whole sky
+      const x = rnd(-.8, .8) * asp, n = 1 + (A.bass > 1.8 ? 1 : 0);
+      for (let i = 0; i < n; i++) this.spawn(S, x + rnd(-.1, .1), 1.05, x + rnd(-.9, .9) * asp, rnd(-1.1, -.5), rnd(.9, 1.1), A.hue + rnd(-.05, .05), rnd(.9, 1.2));
+      if (A.beats % 8 === 0 || (A.bass > 2.2 && Math.random() < .5)) this.big(S);
+    }
+    if (A.onSwing) this.big(S);
+    if (Math.random() < dt * (.3 + 2.2 * Math.min(2, A.trebA))) { const sd = Math.random() < .5 ? -1 : 1; this.spawn(S, sd * asp * 1.02, rnd(-.6, .9), sd * asp * rnd(-.6, .5), rnd(-.9, .8), rnd(.25, .45), A.hue + .5, rnd(.7, 1.3), rnd(.4, .9)); }
+    if (A.onBeat && Math.random() < .35) this.spawn(S, rnd(-.9, .9) * asp, rnd(-.3, .9), rnd(-.9, .9) * asp, -1.1, rnd(.4, .7), A.hue + .25, rnd(.8, 1.3), rnd(.5, 1.3));
     S.u0[0] = S.flash; S.u0[1] = S.fx; S.u0[2] = S.fy;
   },
   draw(S, dt) {
     const asp = D.aspect, step = (.045 + .03 * Math.min(2, A.trebA)) * (CFG.speed * .5 + .5), keep = [];
     for (const t of S.tips) {
-      const n = Math.max(1, Math.round(dt * 60 * (t.w > .6 ? 2 : 1)));
+      const n = Math.max(1, Math.round(dt * 60 * t.rate));
       for (let k = 0; k < n && t.life > 0; k++) {
         const want = Math.atan2(t.ty - t.y, t.tx - t.x), d = Math.atan2(Math.sin(want - t.a), Math.cos(want - t.a));
         t.a += d * .18 + rnd(-.7, .7) * (1.1 - .4 * t.w);
-        t.px = t.x; t.py = t.y; t.x += Math.cos(t.a) * step * (.6 + .5 * t.w); t.y += Math.sin(t.a) * step * (.6 + .5 * t.w); t.life -= .035; t.age++;
+        t.px = t.x; t.py = t.y; t.x += Math.cos(t.a) * step * t.sp * (.6 + .5 * t.w); t.y += Math.sin(t.a) * step * t.sp * (.6 + .5 * t.w); t.life -= .035; t.age++;
         palJS(t.h, tmpC); const g = (1.6 + 2.2 * t.w) * (.6 + .4 * Math.min(2, A.trebA));
         D.line(2, (i, u, p) => { p.x = i ? t.x : t.px; p.y = i ? t.y : t.py; p.r = tmpC.r * .5 + .5; p.g = tmpC.g * .5 + .5; p.b = tmpC.b * .4 + .6; }, { w: .0025 + .004 * t.w, gain: g, core: .5 + .5 * t.w });
-        if (Math.random() < .09 * (1 + A.trebA) && S.tips.length < 120 && t.w > .15) S.tips.push({ x: t.x, y: t.y, px: t.x, py: t.y, a: t.a + rnd(.4, 1.) * (Math.random() < .5 ? -1 : 1), tx: t.tx, ty: t.ty, w: t.w * .5, life: t.life * .6, h: t.h, age: 0 });
-        if (Math.hypot(t.x - t.tx, t.y - t.ty) < .08 || t.y < -1.05 || Math.abs(t.x) > asp * 1.1) {
+        if (Math.random() < .09 * (1 + A.trebA) / Math.max(1, t.rate * .5) && S.tips.length < 120 && t.w > .15) S.tips.push({ x: t.x, y: t.y, px: t.x, py: t.y, a: t.a + rnd(.4, 1.) * (Math.random() < .5 ? -1 : 1), tx: t.tx, ty: t.ty, w: t.w * .5, life: t.life * .6, h: t.h, sp: t.sp, rate: t.rate, age: 0 });
+        if (Math.hypot(t.x - t.tx, t.y - t.ty) < .08 || t.y < -1.05 || t.y > 1.08 || Math.abs(t.x) > asp * 1.1) {
           if (t.w > .7) { S.flash = Math.max(S.flash, 1.2 * CFG.punch); S.fx = t.x; S.fy = Math.max(t.y, -.9); D.sprite(t.x, t.y, .25, 0, .8, .85, 1, 1.2, 0, 0, 1, 1); }
           t.life = 0;
         }
@@ -99,6 +117,7 @@ PRESETS.push({
   // the numbers run out of precision the picture flashes white and the dive starts again somewhere else.
   warp: `vec3 warp(vec2 p){ vec2 q=rot(u1.z)*p*u1.y; return P(q)*DK(.9); }`,
   comp: `vec3 comp(vec2 p){
+    if(stage!=0){ vec2 ext=vec2(aspect,1.); p=(abs(mod(p/ext+1.,4.)-2.)-1.)*ext; }   // in a space the picture repeats mirrored, so fold the wall back onto it or the dive is off the edge
     vec2 c0=u0.xy+rot(u1.w)*p*u0.z, z=vec2(0.);
     float it=0., n=u1.x, mx=1e9;
     for(int i=0;i<300;i++){ if(float(i)>=n) break;

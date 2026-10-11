@@ -52,11 +52,12 @@ label.pick input { position: absolute; opacity: 0; width: 1px; height: 1px; }
 
 #hud { position: fixed; left: 0; right: 0; bottom: 0; padding: 14px 16px calc(14px + env(safe-area-inset-bottom, 0px)); display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; background: linear-gradient(to top, rgba(5, 4, 10, .78), rgba(5, 4, 10, 0)); transition: opacity .5s; }
 #hud.idle { opacity: 0; pointer-events: none; }
-/* On phones, Settings is a tab on the right edge: the one bit of the drawer left peeking out. It fades with the strip */
-#tab { display: none; z-index: 4; position: fixed; right: 0; top: 50%; transform: translateY(-50%); writing-mode: vertical-rl; padding: 14px 8px; border: 1px solid var(--line); border-right: 0; border-radius: 12px 0 0 12px; background: var(--glass); backdrop-filter: blur(22px) saturate(1.4); -webkit-backdrop-filter: blur(22px) saturate(1.4); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; transition: opacity .5s; }
+/* Settings is a tab on the right edge: the one bit of the drawer left peeking out. Phones show it all the time (their strip has no Settings button); it fades with the strip */
+#tab { display: none; z-index: 4; position: fixed; right: 0; top: 50%; transform: translateY(-50%); writing-mode: vertical-rl; padding: 14px 8px; border: 1px solid var(--line); border-right: 0; border-radius: 12px 0 0 12px; background: var(--glass); backdrop-filter: blur(22px) saturate(1.4); -webkit-backdrop-filter: blur(22px) saturate(1.4); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; transition: opacity .5s, right .28s ease; }
 #tab.idle { opacity: 0; pointer-events: none; }
-/* while the drawer is open the tab rides on its left edge and reads Close, so a long scroll never hides the way out */
-body.dash-open #tab { right: auto; left: 0; border-left: 0; border-right: 1px solid var(--line); border-radius: 0 12px 12px 0; }
+/* while the drawer is open, on every screen size, the tab is a flap on the drawer's left edge that reads Close: one object with the drawer, and a long scroll never hides the way out */
+body.dash-open #tab { display: block; right: var(--dash); }
+#tab[hidden] { display: none; }
 body.dash-open #hud { right: var(--dash); }
 #name { font-family: var(--display); font-weight: 600; font-size: 18px; letter-spacing: -.01em; min-width: 0; margin-right: auto; overflow-wrap: anywhere; }
 #name small { display: block; font-family: var(--mono); font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--dim); font-weight: 400; }
@@ -102,7 +103,11 @@ body.nocursor, body.nocursor * { cursor: none; }
   #hud .grp { flex-basis: 100%; }                 /* the name and meters on one row, the pills on the next */
   #bDash, #bFull { display: none; }               /* Settings lives on the tab; phones mostly cannot go fullscreen */
   #tab { display: block; }
-  body.dash-open #dash { padding-left: 44px; }    /* a gutter for the Close tab */
+}
+/* a phone too narrow for the flap to fit beside the drawer: the flap sits inside it, on its left edge, with a gutter */
+@media (max-width: 405px) {
+  body.dash-open #tab { right: auto; left: 0; border-left: 0; border-right: 1px solid var(--line); border-radius: 0 12px 12px 0; }
+  body.dash-open #dash { padding-left: 44px; }
 }
 @media (max-width: 640px), ((max-width: 960px) and (max-height: 500px)) { body.dash-open #hud { display: none; } }
 @media (prefers-reduced-motion: reduce) { #hud, button, #dash, #dash.open { transition: none; } }
@@ -225,7 +230,7 @@ uniform float t, mt, bass, mid, treb, bassA, midA, trebA, beat, kick, vol, hue, 
 uniform vec4 seed;
 uniform sampler2D velT, auxT; uniform float dt, ax, fit; uniform vec4 cam;
 uniform float spd, dkx, pano; uniform int stage; uniform vec4 fly, look;
-uniform sampler2D agentT; uniform vec4 u0, u1;                   // agent positions (scenes with agents), and two free vec4s each scene sets as it likes
+uniform sampler2D agentT; uniform vec4 u0, u1, u2;               // agent positions (scenes with agents), and three free vec4s each scene sets as it likes
 #define DK(x) pow(x, dkx)       // a per-frame fade, corrected for frame rate and the Trails setting
 #define PI 3.14159265
 #define TAU 6.2831853
@@ -1453,20 +1458,22 @@ PRESETS.push({
 });
 
 PRESETS.push({
-  name: 'Petri', accent: '#a3e635', simSteps: 10,
+  name: 'Petri', accent: '#a3e635', simSteps: 10, fluid: { vort: 4, damp: .9 },
   // Reaction-diffusion (the idea behind Flexi's organic Milkdrop presets): two chemicals, one eats the other,
-  // and spots, worms and coral grow by themselves. Sound seeds new colonies and shifts the chemistry.
+  // and spots, worms and coral grow by themselves. Sound seeds new colonies and shifts the chemistry. The dish
+  // is a slow liquid: eddies carry the colonies into one another so they merge, kicks blow them apart, and the
+  // chemistry drifts between regimes (spots that keep dividing, worms that knit into mazes) over the song.
   sim: `vec4 sim(vec2 p){
-    vec2 q=rot(.0007*(midA-.6))*p*(1.-.0005*kick);
+    vec2 q=rot(.0004*(midA-.6))*p*(1.-.0003*kick)-V(p)*dt*.1;
     vec2 e=vec2(ax,0.), d=vec2(ax,ax);
     vec2 s=X(q).rg; if(s.r+s.g<.002) s.r=1.;
     s=clamp(s,0.,1.);
     vec2 lap=(X(q+e.xy).rg+X(q-e.xy).rg+X(q+e.yx).rg+X(q-e.yx).rg)*.2+(X(q+d).rg+X(q-d).rg+X(q+vec2(d.x,-d.y)).rg+X(q+vec2(-d.x,d.y)).rg)*.05-s;
-    float f=.026+.024*smoothstep(-1.,1.,p.y)+.004*(bassA-1.), k=.0595+.0062*smoothstep(-aspect,aspect,p.x)+.001*sin(mt*.2);
+    float f=.026+.024*smoothstep(-1.,1.,p.y)+u0.y, k=.0595+.0062*smoothstep(-aspect,aspect,p.x)+u0.z;
     float r=s.r*s.g*s.g;
     s+=vec2(lap.r-r+f*(1.-s.r), .5*lap.g+r-(k+f)*s.g);
     return vec4(clamp(s,0.,1.),0.,1.); }`,
-  warp: `vec3 warp(vec2 p){ float b=X(p).g; return mix(P(p)*DK(.9), pal(hue+b*1.2+.15)*smoothstep(.08,.45,b), .5); }`,
+  warp: `vec3 warp(vec2 p){ float b=X(p).g; return mix(P(p-V(p)*dt)*DK(.9), pal(hue+b*1.2+.15)*smoothstep(.08,.45,b), .5); }`,
   comp: `vec3 comp(vec2 p){
     vec2 e=vec2(ax*1.2,0.);
     float b=X(p).g;
@@ -1479,7 +1486,23 @@ PRESETS.push({
     c+=vec3(1.)*pow(max(dot(r,normalize(vec3(.3,.5,.8))),0.),40.)*.6*body;
     c+=glow(p)*.6;
     return c*(.85+.5*beat*body)*vig(p); }`,
-  init(S) { S.seeds = 40; },
+  init(S) { S.seeds = 40; S.mood = [0, 0]; S.moodT = [0, 0]; S.timer = 0; S.next = rnd(8, 16); },
+  update(S, dt) {
+    S.timer += dt;
+    // The chemistry drifts: a new feed/kill pairing every so often and when the song changes gear, eased in over seconds.
+    if (A.onSwing || S.timer > S.next) { S.timer = 0; S.next = rnd(8, 16); S.moodT = [rnd(-.008, .008), rnd(-.004, .003)]; }
+    for (let i = 0; i < 2; i++) S.mood[i] += (S.moodT[i] - S.mood[i]) * Math.min(1, dt * .3);
+    S.u0[1] = S.mood[0] + .005 * (Math.min(2, A.bassA) - 1) + .01 * A.kick;   // a kick feeds every colony at once: they bulge, bud and split
+    S.u0[2] = S.mood[1] - .004 * A.kick;
+  },
+  force(S, dt) {
+    const asp = D.aspect;
+    for (let k = 0; k < 3; k++) {       // three slow eddies wander the dish and carry colonies into one another
+      const a = S.mt * .07 + k * 2.1, x = Math.cos(a * 1.1 + k) * asp * .55, y = Math.sin(a * .8 + k * 1.7) * .55, lv = [A.bassA, A.midA, A.trebA][k];
+      F.swirl(x, y, (.05 + .08 * Math.min(2, lv)) * dt * (k % 2 ? -1 : 1), .28);
+    }
+    if (A.onKick) F.burst(rnd(-.7, .7) * asp, rnd(-.7, .7), .25 + .15 * Math.min(2, A.bass), .12, 8);   // a kick blows a colony apart
+  },
   simDraw(S) {
     const asp = D.aspect, seed = (x, y, r, a) => D.sprite(x, y, r, 0, 0, a, 0, 1, 0, 0, 1, 1);
     for (; S.seeds > 0; S.seeds--) seed(rnd(-1, 1) * asp, rnd(-1, 1), rnd(.03, .07), .6);
@@ -1548,6 +1571,9 @@ PRESETS.push({
   // Physarum: a quarter of a million agents, each sniffing the trail ahead of it (left, centre, right), turning
   // toward the strongest scent and laying more down as it goes. Veins and networks grow out of nothing but that.
   // Music sets how far they sense, how sharply they turn and how fast they run; kicks scatter them, beats drop food.
+  // The network never settles: the food wanders and runs out, every so often a bald wave strips the scent off the
+  // dish and the veins regrow somewhere else, the dish drifts between fine lace and thick veins, and the biggest
+  // kicks shove everything near one point outward.
   agents: { n: 262144,
     update: `vec4 agent(vec4 s, vec2 id){
       vec2 p=s.xy; float h=s.z, k=s.w;
@@ -1556,7 +1582,9 @@ PRESETS.push({
       float r=hash(id*vec2(91.3,57.1)+fract(t*.37)*vec2(13.,7.));
       if(wc>wl && wc>wr) {} else if(wc<wl && wc<wr) h+=(r<.5?-ta:ta); else if(wl>wr) h+=ta; else if(wr>wl) h-=ta;
       h+=(r-.5)*u1.y+(hash(id+fract(t))-.5)*u1.z;
-      p+=dir(h)*u1.x*dt*(.6+.8*k);
+      vec2 dc=p-u2.xy; float dl=length(dc), sh=u2.z*smoothstep(u2.w,u2.w*.15,dl);     // the shove: headings swing outward from its centre
+      if(sh>.001){ float th=atan(dc.y,dc.x), dd=mod(th-h+PI,TAU)-PI; h+=dd*sh; }
+      p+=dir(h)*u1.x*dt*(.6+.8*k+1.5*sh);
       if(abs(p.x)>aspect){ p.x=clamp(p.x,-aspect,aspect); h=PI-h; }
       if(abs(p.y)>1.){ p.y=clamp(p.y,-1.,1.); h=-h; }
       return vec4(p,h,k); }`,
@@ -1574,23 +1602,47 @@ PRESETS.push({
     c+=pal(hue+.45)*.45*smoothstep(.005,.08,d)*(1.-body);                          // a faint halo where the search parties are
     c+=P(p)*1.2+glow(p)*.5;
     return c*vig(p); }`,
-  init(S) { S.scatter = 0; S.food = 6; },
+  init(S) { S.scatter = 0; S.food = 6; S.feed = []; S.reg = .5; S.regT = .5; S.next = rnd(14, 26); S.timer = 0; S.sweep = null; S.shove = 0; S.sx = 0; S.sy = 0; S.sr = .5; S.kicks = 0; },
   update(S, dt) {
+    const asp = D.aspect;
+    S.timer += dt;
+    // Every so often, and when the song changes gear: a new regime for the veins, and a bald wave rolls across the dish.
+    if (A.onSwing || S.timer > S.next) {
+      S.timer = 0; S.next = rnd(14, 26); S.regT = Math.random();
+      if (!S.sweep) { const a = rnd(0, TAU); S.sweep = { x: -Math.cos(a) * asp * 1.45, y: -Math.sin(a) * 1.45, vx: Math.cos(a) * .55, vy: Math.sin(a) * .55, life: 5.5 }; }
+      S.shove = 1; S.sx = -S.sweep.x * 1.1; S.sy = -S.sweep.y * 1.1; S.sr = 2.8;        // and a gust from the far side, so the whole network leans
+    }
+    S.reg += (S.regT - S.reg) * Math.min(1, dt * .25);
+    if (S.sweep) { const w = S.sweep, v = dt * CFG.speed; w.x += w.vx * v; w.y += w.vy * v; w.life -= v; if (w.life <= 0) S.sweep = null; }
+    // Three feeding spots wander the dish and run out; the network keeps re-routing after them. Every eighth beat one takes off.
+    while (S.feed.length < 3) S.feed.push({ x: rnd(-.8, .8) * asp, y: rnd(-.8, .8), a: rnd(0, TAU), v: rnd(.05, .15), life: rnd(8, 22) });
+    for (const f of S.feed) {
+      const v = dt * CFG.speed; f.a += rnd(-1, 1) * dt * 1.5; f.x += Math.cos(f.a) * f.v * v; f.y += Math.sin(f.a) * f.v * v; f.life -= dt;
+      if (Math.abs(f.x) > asp * 1.05 || Math.abs(f.y) > 1.05) f.a += Math.PI;
+      f.v += (Math.min(f.v, .15) - f.v) * Math.min(1, dt * .6);
+    }
+    S.feed = S.feed.filter(f => f.life > 0);
+    if (A.onBeat && A.beats % 8 === 0) { const f = S.feed[Math.floor(Math.random() * S.feed.length)]; if (f) { f.v = rnd(.5, .9); f.a = rnd(0, TAU); } }
     S.scatter = A.onKick ? Math.min(1.5, CFG.punch) * .6 : S.scatter * Math.max(0, 1 - dt * 6);
-    S.u0[0] = .962 - .01 * Math.min(2, A.trebA);                      // trail decay per step: treble clears the slate faster
-    S.u0[1] = .32 + .22 * Math.min(1.5, A.midA);                       // sensor angle
-    S.u0[2] = .05 + .035 * Math.min(2, A.bassA);                       // sensor distance: bass makes them look further ahead
-    S.u0[3] = .35 + .25 * Math.min(2, A.midA) + .5 * A.kick;           // turn angle
+    if (A.onKick) { S.kicks++; if (A.bass > 1.5 || S.kicks % 4 === 0) { S.shove = 1; S.sx = rnd(-.8, .8) * asp; S.sy = rnd(-.8, .8); S.sr = .55; } }
+    S.shove *= Math.max(0, 1 - dt * 4);
+    const rg = S.reg;                                                  // 0 = fine lace, 1 = few thick veins
+    S.u0[0] = .952 + .02 * rg - .01 * Math.min(2, A.trebA);           // trail decay per step: treble clears the slate faster
+    S.u0[1] = .28 + .2 * rg + .22 * Math.min(1.5, A.midA);             // sensor angle
+    S.u0[2] = .035 + .06 * rg + .035 * Math.min(2, A.bassA);           // sensor distance: bass makes them look further ahead
+    S.u0[3] = .3 + .15 * (1 - rg) + .25 * Math.min(2, A.midA) + .5 * A.kick;   // turn angle
     S.u1[0] = (.30 + .35 * Math.min(1.5, A.energy) + .9 * A.kick) * CFG.speed;   // speed, p-units per second
-    S.u1[1] = .04 + .10 * Math.min(2, A.trebA);                        // wander
+    S.u1[1] = .03 + .08 * (1 - rg) + .10 * Math.min(2, A.trebA);       // wander
     S.u1[2] = S.scatter * 6.283;                                       // a kick throws every heading
     S.u1[3] = .035;                                                    // trail laid per agent per frame
+    S.u2[0] = S.sx; S.u2[1] = S.sy; S.u2[2] = S.shove * .5; S.u2[3] = S.sr;
   },
   simDraw(S) {       // food: beats drop scent the agents converge on, and the first seconds get a few to start the network
     const asp = D.aspect, food = (x, y, r, a) => D.sprite(x, y, r, 0, a, 0, 0, 1, 0, 0, .6, 1);
     for (; S.food > 0; S.food--) food(rnd(-.8, .8) * asp, rnd(-.8, .8), .12, 1.5);
     if (A.onKick) food(rnd(-.85, .85) * asp, rnd(-.85, .85), .08 + .06 * Math.min(2, A.bass), 2.5 * CFG.punch);
-    const a = S.mt * .25; food(Math.cos(a) * asp * .5, Math.sin(a * 1.3) * .5, .05, .25 * A.midA);
+    for (const f of S.feed) food(f.x, f.y, .05, (.12 + .18 * Math.min(2, A.midA)) * Math.min(1, f.life));   // fades as it runs out
+    if (S.sweep) food(S.sweep.x, S.sweep.y, .45, -1.2);                // the bald wave strips the scent; the agents flee ahead of it and regrow behind
   },
   draw() {}
 });
@@ -1599,8 +1651,9 @@ PRESETS.push({
   name: 'Murmuration', accent: '#fdba74', simSteps: 1, cam: .6,
   // A starling flock at dusk. Each bird reads the crowd around it from a low-res field the flock paints into:
   // density (r) and summed heading (g,b). It lines up with its neighbours, drifts toward the thick of the flock,
-  // backs off when crowded, and the whole flock is drawn toward a point that wanders. Bass pulls it into a ball,
-  // treble frays the edges, a kick sends a shiver through every bird at once.
+  // backs off when crowded, and each half of the flock is drawn toward its own wandering point; the halves join
+  // into one flock and split again over the song. A bass swell balls it up, treble frays the edges, a kick sends
+  // a shiver through every bird at once, and now and then a falcon cuts through and the flock opens around it.
   agents: { n: 16384,
     update: `vec4 agent(vec4 s, vec2 id){
       vec2 p=s.xy; float h=s.z, z=s.w;
@@ -1609,13 +1662,16 @@ PRESETS.push({
       vec2 gn=vec2(X(p+e2.xy).r-X(p-e2.xy).r, X(p+e2.yx).r-X(p-e2.yx).r);   // who is right next to me
       vec2 v=dir(h), want=v*.6;
       if(f.r>.02) want+=normalize(f.gb+1e-5)*u0.y;
-      want+=gf*u0.z-gn*3.*smoothstep(1.2,4.,f.r);
-      vec2 toA=u1.xy-p; float la=length(toA); want+=toA/max(la,1e-3)*u1.z*smoothstep(.05,.45,la);
-      float th=atan(want.y,want.x), d=mod(th-h+PI,TAU)-PI;
-      h+=clamp(d,-u1.w*dt,u1.w*dt);
+      want+=gf*u0.z-gn*4.*smoothstep(.5,2.5,f.r);
+      vec2 tgt=fract(z*3.7)<.5 ? u1.xy : u1.zw;                                   // which half of the flock this bird flies with
+      vec2 toA=tgt-p; float la=length(toA); want+=toA/max(la,1e-3)*1.3*smoothstep(.05,.45,la);
+      vec2 fr=p-u2.xy; float lf=length(fr), fear=u2.z*smoothstep(u2.w,0.,lf);     // the falcon: everyone near it breaks away hard
+      want+=fr/max(lf,1e-3)*fear;
+      float th=atan(want.y,want.x), d=mod(th-h+PI,TAU)-PI, turn=4.5+3.*kick+8.*fear;
+      h+=clamp(d,-turn*dt,turn*dt);
       float r=hash(id*vec2(71.3,37.1)+fract(t*.41)*vec2(11.,5.));
       h+=(r-.5)*u0.w;
-      p+=dir(h)*u0.x*dt*(.85+.3*z);
+      p+=dir(h)*u0.x*dt*(.85+.3*z+.6*fear);
       if(abs(p.x)>aspect*1.05){ p.x=clamp(p.x,-aspect*1.05,aspect*1.05); h=PI-h; }
       if(abs(p.y)>1.05){ p.y=clamp(p.y,-1.05,1.05); h=-h; }
       return vec4(p,h,z); }`,
@@ -1633,19 +1689,29 @@ PRESETS.push({
     float birds=clamp(lum(P(p))*2.2,0.,1.), rim=smoothstep(.08,.6,lum(B(p)));
     vec3 c=sky*(1.-birds*.92)+vec3(1.,.7,.45)*rim*.12*(.5+.5*beat);
     return c*vig(p); }`,
-  init(S) { S.ax = 0; S.ay = 0; S.tx = 0; S.ty = 0; S.scatter = 0; },
+  init(S) { S.a = [0, 0, 0, 0]; S.tg = [0, 0, 0, 0]; S.scatter = 0; S.split = 1; S.splitT = 1; S.next = rnd(10, 20); S.timer = 0; S.pred = null; },
   update(S, dt) {
-    const asp = D.aspect;
-    if (A.onBeat && A.beats % 4 === 0 || Math.random() < dt * .08) { S.tx = rnd(-.55, .55) * asp; S.ty = rnd(-.45, .55); }
-    S.ax += (S.tx - S.ax) * Math.min(1, dt * .5); S.ay += (S.ty - S.ay) * Math.min(1, dt * .5);
+    const asp = D.aspect, pick = k => { S.tg[k] = rnd(-.85, .85) * asp; S.tg[k + 1] = rnd(-.8, .8); };
+    S.timer += dt;
+    if (A.onBeat && A.beats % 4 === 0 || Math.random() < dt * .08) pick(Math.random() < .5 ? 0 : 2);                 // somewhere new to head for, anywhere on the screen
+    if (A.onSwing || S.timer > S.next) { S.timer = 0; S.next = rnd(12, 24); S.splitT = S.splitT > .5 ? 0 : 1; if (S.splitT > .5) pick(2); }   // the halves join up, or part again
+    S.split += (S.splitT - S.split) * Math.min(1, dt * .4);
+    for (let k = 0; k < 4; k++) { const g = k < 2 ? S.tg[k] : S.tg[k] * S.split + S.tg[k - 2] * (1 - S.split); S.a[k] += (g - S.a[k]) * Math.min(1, dt * .5); }
+    // A falcon: in from outside the picture, straight through the flock, out the far side.
+    if (!S.pred && ((A.onKick && A.bass > 1.5 && Math.random() < .4) || Math.random() < dt * .035)) {
+      const an = rnd(0, TAU), x = Math.cos(an) * asp * 1.3, y = Math.sin(an) * 1.3, cx = (S.a[0] + S.a[2]) * .5 + rnd(-.2, .2), cy = (S.a[1] + S.a[3]) * .5 + rnd(-.2, .2), l = Math.hypot(cx - x, cy - y);
+      S.pred = { x, y, vx: (cx - x) / l * 1.1, vy: (cy - y) / l * 1.1, life: 4 };
+    }
+    if (S.pred) { const q = S.pred, v = dt * CFG.speed; q.x += q.vx * v; q.y += q.vy * v; q.life -= v; if (q.life <= 0 || Math.abs(q.x) > asp * 1.35 || Math.abs(q.y) > 1.35) S.pred = null; }
     S.scatter = A.onKick ? Math.min(1.5, CFG.punch) : S.scatter * Math.max(0, 1 - dt * 5);
     S.u0[0] = (.32 + .22 * Math.min(1.5, A.energy)) * CFG.speed;       // airspeed
     S.u0[1] = .9 + .5 * Math.min(1.5, A.midA);                          // alignment
-    S.u0[2] = 2.5 + 4.5 * Math.min(2, A.bassA);                          // cohesion: bass balls the flock up
+    S.u0[2] = 1.2 + 3.5 * Math.max(0, Math.min(2, A.bassA) - .9);       // cohesion: only a real bass swell balls the flock up
     S.u0[3] = .03 + .16 * Math.min(2, A.trebA) + 1.6 * S.scatter;       // fray and shiver
-    S.u1[0] = S.ax; S.u1[1] = S.ay; S.u1[2] = 1.3; S.u1[3] = 4.5 + 3 * S.scatter;
+    S.u1.set(S.a);                                                      // the two targets
+    S.u2[0] = S.pred ? S.pred.x : 99; S.u2[1] = S.pred ? S.pred.y : 99; S.u2[2] = S.pred ? 5 : 0; S.u2[3] = .4;
   },
-  draw() {}
+  draw(S) { if (S.pred) D.sprite(S.pred.x, S.pred.y, .016, 0, 1, 1, 1, 1, 0, 0, .6, 1); }   // drawn bright, so the composite paints it as one dark bird bigger than the rest
 });
 
 // ---------- 3.5 scenes, part 2: lightning, an oscilloscope, a fractal dive, a loom ----------
@@ -1669,28 +1735,46 @@ PRESETS.push({
     vec3 bolt=P(p); c+=bolt*1.6+glow(p)*1.4*mix(vec3(.7,.75,1.), pal(hue+.62), .4);
     c+=vec3(.9,.92,1.)*fl*.08;                                                             // the whole sky flickers
     return c*vig(p); }`,
-  init(S) { S.tips = []; S.flash = 0; S.fx = 0; S.fy = .3; S.pend = 0; },
-  spawn(S, x, y, tx, ty, w, life, h) { if (S.tips.length < 120) S.tips.push({ x, y, px: x, py: y, a: Math.atan2(ty - y, tx - x), tx, ty, w, life, h, age: 0 }); },
+  init(S) { S.tips = []; S.flash = 0; S.fx = 0; S.fy = .3; },
+  // Every bolt gets its own target, stride (sp) and thickness (w), so no two are alike. Its life is enough to reach
+  // the target (reach < 1 leaves it short of there) and its rate (steps per frame) comes from that, so every bolt
+  // grounds about a sixth of a second after the beat that launched it, however far it has to go.
+  spawn(S, x, y, tx, ty, w, h, sp, reach) {
+    if (S.tips.length >= 120) return;
+    sp = sp || 1; const steps = Math.hypot(tx - x, ty - y) / (.06 * sp * (.6 + .5 * w) * .85) * (reach || 1.3);
+    S.tips.push({ x, y, px: x, py: y, a: Math.atan2(ty - y, tx - x), tx, ty, w, life: Math.max(.3, steps * .035), h, sp, rate: Math.min(4, Math.max(1, Math.round(steps / 10))), age: 0 });
+  },
+  big(S) {       // one bolt that spans the whole sky: corner to corner, cloud to cloud right across, or up from the ground
+    const asp = D.aspect, kind = Math.random(), sd = Math.random() < .5 ? -1 : 1;
+    if (kind < .45) this.spawn(S, sd * asp * rnd(.6, 1.), 1.05, -sd * asp * rnd(.7, 1.05), -1.05, 1.3, A.hue + rnd(-.05, .05), 1.15);
+    else if (kind < .8) this.spawn(S, sd * asp * 1.04, rnd(.1, .9), -sd * asp * 1.05, rnd(-.2, .9), 1., A.hue + .5 + rnd(-.05, .05), 1.1);
+    else this.spawn(S, rnd(-.8, .8) * asp, -1.04, rnd(-.6, .6) * asp, 1.05, 1.1, A.hue + .25, 1.1);
+  },
   update(S, dt) {
     const asp = D.aspect;
     S.flash *= Math.max(0, 1 - dt * 7);
-    if (A.onKick) { const x = rnd(-.8, .8) * asp, n = 1 + (A.bass > 1.8 ? 1 : 0); for (let i = 0; i < n; i++) this.spawn(S, x + rnd(-.1, .1), 1.05, x + rnd(-.5, .5) * asp, rnd(-1.1, -.6), 1, 1, A.hue + rnd(-.05, .05)); }
-    if (Math.random() < dt * (.3 + 2.2 * Math.min(2, A.trebA))) { const sd = Math.random() < .5 ? -1 : 1; this.spawn(S, sd * asp * 1.02, rnd(-.6, .9), sd * asp * rnd(-.2, .5), rnd(-.9, .8), .35, .5, A.hue + .5); }
-    if (A.onBeat && Math.random() < .35) this.spawn(S, rnd(-.9, .9) * asp, rnd(-.3, .9), rnd(-.5, .5) * asp, -1.1, .55, .7, A.hue + .25);
+    if (A.onKick) {      // every kick: a real bolt from the sky that grounds; on the bar line, a huge kick or a change of gear, one across the whole sky
+      const x = rnd(-.8, .8) * asp, n = 1 + (A.bass > 1.8 ? 1 : 0);
+      for (let i = 0; i < n; i++) this.spawn(S, x + rnd(-.1, .1), 1.05, x + rnd(-.9, .9) * asp, rnd(-1.1, -.5), rnd(.9, 1.1), A.hue + rnd(-.05, .05), rnd(.9, 1.2));
+      if (A.beats % 8 === 0 || (A.bass > 2.2 && Math.random() < .5)) this.big(S);
+    }
+    if (A.onSwing) this.big(S);
+    if (Math.random() < dt * (.3 + 2.2 * Math.min(2, A.trebA))) { const sd = Math.random() < .5 ? -1 : 1; this.spawn(S, sd * asp * 1.02, rnd(-.6, .9), sd * asp * rnd(-.6, .5), rnd(-.9, .8), rnd(.25, .45), A.hue + .5, rnd(.7, 1.3), rnd(.4, .9)); }
+    if (A.onBeat && Math.random() < .35) this.spawn(S, rnd(-.9, .9) * asp, rnd(-.3, .9), rnd(-.9, .9) * asp, -1.1, rnd(.4, .7), A.hue + .25, rnd(.8, 1.3), rnd(.5, 1.3));
     S.u0[0] = S.flash; S.u0[1] = S.fx; S.u0[2] = S.fy;
   },
   draw(S, dt) {
     const asp = D.aspect, step = (.045 + .03 * Math.min(2, A.trebA)) * (CFG.speed * .5 + .5), keep = [];
     for (const t of S.tips) {
-      const n = Math.max(1, Math.round(dt * 60 * (t.w > .6 ? 2 : 1)));
+      const n = Math.max(1, Math.round(dt * 60 * t.rate));
       for (let k = 0; k < n && t.life > 0; k++) {
         const want = Math.atan2(t.ty - t.y, t.tx - t.x), d = Math.atan2(Math.sin(want - t.a), Math.cos(want - t.a));
         t.a += d * .18 + rnd(-.7, .7) * (1.1 - .4 * t.w);
-        t.px = t.x; t.py = t.y; t.x += Math.cos(t.a) * step * (.6 + .5 * t.w); t.y += Math.sin(t.a) * step * (.6 + .5 * t.w); t.life -= .035; t.age++;
+        t.px = t.x; t.py = t.y; t.x += Math.cos(t.a) * step * t.sp * (.6 + .5 * t.w); t.y += Math.sin(t.a) * step * t.sp * (.6 + .5 * t.w); t.life -= .035; t.age++;
         palJS(t.h, tmpC); const g = (1.6 + 2.2 * t.w) * (.6 + .4 * Math.min(2, A.trebA));
         D.line(2, (i, u, p) => { p.x = i ? t.x : t.px; p.y = i ? t.y : t.py; p.r = tmpC.r * .5 + .5; p.g = tmpC.g * .5 + .5; p.b = tmpC.b * .4 + .6; }, { w: .0025 + .004 * t.w, gain: g, core: .5 + .5 * t.w });
-        if (Math.random() < .09 * (1 + A.trebA) && S.tips.length < 120 && t.w > .15) S.tips.push({ x: t.x, y: t.y, px: t.x, py: t.y, a: t.a + rnd(.4, 1.) * (Math.random() < .5 ? -1 : 1), tx: t.tx, ty: t.ty, w: t.w * .5, life: t.life * .6, h: t.h, age: 0 });
-        if (Math.hypot(t.x - t.tx, t.y - t.ty) < .08 || t.y < -1.05 || Math.abs(t.x) > asp * 1.1) {
+        if (Math.random() < .09 * (1 + A.trebA) / Math.max(1, t.rate * .5) && S.tips.length < 120 && t.w > .15) S.tips.push({ x: t.x, y: t.y, px: t.x, py: t.y, a: t.a + rnd(.4, 1.) * (Math.random() < .5 ? -1 : 1), tx: t.tx, ty: t.ty, w: t.w * .5, life: t.life * .6, h: t.h, sp: t.sp, rate: t.rate, age: 0 });
+        if (Math.hypot(t.x - t.tx, t.y - t.ty) < .08 || t.y < -1.05 || t.y > 1.08 || Math.abs(t.x) > asp * 1.1) {
           if (t.w > .7) { S.flash = Math.max(S.flash, 1.2 * CFG.punch); S.fx = t.x; S.fy = Math.max(t.y, -.9); D.sprite(t.x, t.y, .25, 0, .8, .85, 1, 1.2, 0, 0, 1, 1); }
           t.life = 0;
         }
@@ -1749,6 +1833,7 @@ PRESETS.push({
   // the numbers run out of precision the picture flashes white and the dive starts again somewhere else.
   warp: `vec3 warp(vec2 p){ vec2 q=rot(u1.z)*p*u1.y; return P(q)*DK(.9); }`,
   comp: `vec3 comp(vec2 p){
+    if(stage!=0){ vec2 ext=vec2(aspect,1.); p=(abs(mod(p/ext+1.,4.)-2.)-1.)*ext; }   // in a space the picture repeats mirrored, so fold the wall back onto it or the dive is off the edge
     vec2 c0=u0.xy+rot(u1.w)*p*u0.z, z=vec2(0.);
     float it=0., n=u1.x, mx=1e9;
     for(int i=0;i<300;i++){ if(float(i)>=n) break;
@@ -2219,12 +2304,12 @@ function useScene(prog, S, prevTex, blurTex) {
   gl.uniform1f(u.spd, CFG.speed * frn); gl.uniform1f(u.dkx, frn / CFG.trail);     // Speed and Trails reach every warp shader here
   gl.uniform4fv(u.cam, camFor(S)); gl.uniform1f(u.fit, camFit(S, W / H)); gl.uniform1i(u.stage, S.stage || 0); gl.uniform4fv(u.fly, flyFor(S, clock));
   gl.uniform4f(u.look, CFG.bright, CFG.sat, CFG.hueShift, CFG.glow);
-  gl.uniform1f(u.pano, S.P.panorama ? 1 : 0); gl.uniform4fv(u.u0, S.u0); gl.uniform4fv(u.u1, S.u1);
+  gl.uniform1f(u.pano, S.P.panorama ? 1 : 0); gl.uniform4fv(u.u0, S.u0); gl.uniform4fv(u.u1, S.u1); gl.uniform4fv(u.u2, S.u2);
   if (S.P.ag && S.P.ag.a) { bindTex(5, S.P.ag.a.tex); gl.uniform1i(u.agentT, 5); }
   for (const k of UNI) if (u[k]) gl.uniform1f(u[k], k === 't' ? S.t : k === 'mt' ? S.mt : A[k]);
 }
 function pickStage(P) { return CFG.spaces && CFG.cam > 0 && P.stages.length && Math.random() < .55 ? P.stages[Math.floor(Math.random() * P.stages.length)] : 0; }
-function makeState(P) { const S = { P, t: 0, mt: Math.random() * 60, seed: [Math.random(), Math.random(), Math.random(), Math.random()], stage: pickStage(P), u0: new Float32Array(4), u1: new Float32Array(4) }; if (P.init) P.init(S); return S; }
+function makeState(P) { const S = { P, t: 0, mt: Math.random() * 60, seed: [Math.random(), Math.random(), Math.random(), Math.random()], stage: pickStage(P), u0: new Float32Array(4), u1: new Float32Array(4), u2: new Float32Array(4) }; if (P.init) P.init(S); return S; }
 function label() {
   $('nameTxt').textContent = cur.P.name;
   $('nameSub').textContent = 'Scene ' + (cur.i + 1) + ' of ' + PRESETS.length + (cur.stage ? ' · ' + STAGES[cur.stage] : '');

@@ -50,20 +50,22 @@ PRESETS.push({
 });
 
 PRESETS.push({
-  name: 'Petri', accent: '#a3e635', simSteps: 10,
+  name: 'Petri', accent: '#a3e635', simSteps: 10, fluid: { vort: 4, damp: .9 },
   // Reaction-diffusion (the idea behind Flexi's organic Milkdrop presets): two chemicals, one eats the other,
-  // and spots, worms and coral grow by themselves. Sound seeds new colonies and shifts the chemistry.
+  // and spots, worms and coral grow by themselves. Sound seeds new colonies and shifts the chemistry. The dish
+  // is a slow liquid: eddies carry the colonies into one another so they merge, kicks blow them apart, and the
+  // chemistry drifts between regimes (spots that keep dividing, worms that knit into mazes) over the song.
   sim: `vec4 sim(vec2 p){
-    vec2 q=rot(.0007*(midA-.6))*p*(1.-.0005*kick);
+    vec2 q=rot(.0004*(midA-.6))*p*(1.-.0003*kick)-V(p)*dt*.1;
     vec2 e=vec2(ax,0.), d=vec2(ax,ax);
     vec2 s=X(q).rg; if(s.r+s.g<.002) s.r=1.;
     s=clamp(s,0.,1.);
     vec2 lap=(X(q+e.xy).rg+X(q-e.xy).rg+X(q+e.yx).rg+X(q-e.yx).rg)*.2+(X(q+d).rg+X(q-d).rg+X(q+vec2(d.x,-d.y)).rg+X(q+vec2(-d.x,d.y)).rg)*.05-s;
-    float f=.026+.024*smoothstep(-1.,1.,p.y)+.004*(bassA-1.), k=.0595+.0062*smoothstep(-aspect,aspect,p.x)+.001*sin(mt*.2);
+    float f=.026+.024*smoothstep(-1.,1.,p.y)+u0.y, k=.0595+.0062*smoothstep(-aspect,aspect,p.x)+u0.z;
     float r=s.r*s.g*s.g;
     s+=vec2(lap.r-r+f*(1.-s.r), .5*lap.g+r-(k+f)*s.g);
     return vec4(clamp(s,0.,1.),0.,1.); }`,
-  warp: `vec3 warp(vec2 p){ float b=X(p).g; return mix(P(p)*DK(.9), pal(hue+b*1.2+.15)*smoothstep(.08,.45,b), .5); }`,
+  warp: `vec3 warp(vec2 p){ float b=X(p).g; return mix(P(p-V(p)*dt)*DK(.9), pal(hue+b*1.2+.15)*smoothstep(.08,.45,b), .5); }`,
   comp: `vec3 comp(vec2 p){
     vec2 e=vec2(ax*1.2,0.);
     float b=X(p).g;
@@ -76,7 +78,23 @@ PRESETS.push({
     c+=vec3(1.)*pow(max(dot(r,normalize(vec3(.3,.5,.8))),0.),40.)*.6*body;
     c+=glow(p)*.6;
     return c*(.85+.5*beat*body)*vig(p); }`,
-  init(S) { S.seeds = 40; },
+  init(S) { S.seeds = 40; S.mood = [0, 0]; S.moodT = [0, 0]; S.timer = 0; S.next = rnd(8, 16); },
+  update(S, dt) {
+    S.timer += dt;
+    // The chemistry drifts: a new feed/kill pairing every so often and when the song changes gear, eased in over seconds.
+    if (A.onSwing || S.timer > S.next) { S.timer = 0; S.next = rnd(8, 16); S.moodT = [rnd(-.008, .008), rnd(-.004, .003)]; }
+    for (let i = 0; i < 2; i++) S.mood[i] += (S.moodT[i] - S.mood[i]) * Math.min(1, dt * .3);
+    S.u0[1] = S.mood[0] + .005 * (Math.min(2, A.bassA) - 1) + .01 * A.kick;   // a kick feeds every colony at once: they bulge, bud and split
+    S.u0[2] = S.mood[1] - .004 * A.kick;
+  },
+  force(S, dt) {
+    const asp = D.aspect;
+    for (let k = 0; k < 3; k++) {       // three slow eddies wander the dish and carry colonies into one another
+      const a = S.mt * .07 + k * 2.1, x = Math.cos(a * 1.1 + k) * asp * .55, y = Math.sin(a * .8 + k * 1.7) * .55, lv = [A.bassA, A.midA, A.trebA][k];
+      F.swirl(x, y, (.05 + .08 * Math.min(2, lv)) * dt * (k % 2 ? -1 : 1), .28);
+    }
+    if (A.onKick) F.burst(rnd(-.7, .7) * asp, rnd(-.7, .7), .25 + .15 * Math.min(2, A.bass), .12, 8);   // a kick blows a colony apart
+  },
   simDraw(S) {
     const asp = D.aspect, seed = (x, y, r, a) => D.sprite(x, y, r, 0, 0, a, 0, 1, 0, 0, 1, 1);
     for (; S.seeds > 0; S.seeds--) seed(rnd(-1, 1) * asp, rnd(-1, 1), rnd(.03, .07), .6);
