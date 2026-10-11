@@ -202,7 +202,7 @@ const DEFAULTS = {
   bright: 1, trail: 1, glow: 1, hueShift: 0, sat: 1,                  // picture
   cam: 1, spaces: true,                                               // camera
   auto: true, sceneSec: 30, transSec: 2.4, favOnly: false, detail: 0, // scenes
-  fav: {}, hide: {}, micId: ''
+  fav: {}, hide: {}, micId: '', mixApps: true   // mixApps: on iPad/iPhone, try to keep other apps' music playing while the mic is open
 };
 const STORE_KEY = 'afterimage.settings.v3';
 const CFG = (() => {
@@ -538,21 +538,40 @@ function attachStream(s) {
 }
 async function useTab() {
   if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) throw new Error('This browser cannot capture tab or system audio. Try Chrome or Edge on a computer.');
+  sessionType('auto');
   const s = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 1, width: 320, height: 180, displaySurface: 'window' }, audio: RAW_AUDIO, systemAudio: 'include', selfBrowserSurface: 'exclude' });   // opens on the Window pane; the "Share audio" box is the browser's and cannot be pre-ticked
   if (!s.getAudioTracks().length) { s.getTracks().forEach(tr => tr.stop()); throw new Error('That share had no audio. Try again and tick the "Share audio" box at the bottom of the dialog before confirming.'); }
   attachStream(s); sourceKind = 'tab';
   return 'Tab / system audio';
 }
+// iPad and iPhone: opening the microphone normally switches the whole device to "play and record", and iOS pauses
+// whatever Spotify or Music was playing. Safari's Audio Session API can ask for an "ambient" session instead, which
+// lets other apps keep playing; Apple's own rules say that session has no microphone input, so if it comes up deaf
+// the mic is reopened the normal way and the attempt is not repeated. There is no third option on iOS: nothing a
+// web page can do opens the mic there without one of the two giving way.
+const MIX = !!(navigator.audioSession && TOUCH);
+function sessionType(t) { try { if (navigator.audioSession) navigator.audioSession.type = t; } catch (e) {} }
 async function useMic() {
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('This browser cannot open the microphone here.');
   // Echo and noise filtering stay off (they strip music), but the browser may level the mic: asking for it fully
   // raw gave a dead-quiet signal on some Windows audio drivers.
   const want = id => ({ audio: Object.assign({ echoCancellation: false, noiseSuppression: false, autoGainControl: true }, id ? { deviceId: { exact: id } } : {}) });
+  const mixing = MIX && CFG.mixApps;
+  sessionType(mixing ? 'ambient' : 'auto');
   let s;
   try { s = await navigator.mediaDevices.getUserMedia(want(CFG.micId)); }
   catch (err) { if (!CFG.micId || (err.name !== 'OverconstrainedError' && err.name !== 'NotFoundError')) throw err; CFG.micId = ''; s = await navigator.mediaDevices.getUserMedia(want('')); }
   attachStream(s); sourceKind = 'mic'; micLabel = s.getAudioTracks()[0].label || 'Microphone';
   listMics(s.getAudioTracks()[0].getSettings().deviceId);
+  if (mixing) {      // watch the first ten seconds: exact digital silence for 2.5 s means the mixed session gave no input
+    let left = 20;
+    const watch = setInterval(() => {
+      if (stream !== s || --left < 0) { clearInterval(watch); return; }
+      if (A.quiet < 2.5) return;
+      clearInterval(watch); CFG.mixApps = false; saveCfg();
+      useMic().then(() => { if (typeof syncSource === 'function') syncSource(); }).catch(() => {});
+    }, 500);
+  }
   return 'Microphone';
 }
 async function listMics(current) {      // device names are only readable once permission has been given
@@ -581,7 +600,7 @@ player.addEventListener('pause', () => { document.getElementById('pPlay').textCo
 function useFiles(files) {
   const list = [...files].filter(f => /^(audio|video)\//.test(f.type) || /\.(mp3|m4a|aac|flac|wav|ogg|opus|webm|mp4)$/i.test(f.name));
   if (!list.length) throw new Error('None of those were audio files the browser can play.');
-  ensureCtx(); stopSource();
+  sessionType('auto'); ensureCtx(); stopSource();
   if (!playerNode) playerNode = actx.createMediaElementSource(player);
   srcNode = playerNode; srcNode.connect(analyser); analyser.connect(actx.destination);
   queue = list; A.live = true; sourceKind = 'file'; playIndex(0);
@@ -590,7 +609,7 @@ function useFiles(files) {
 
 // Demo: a small generative loop, so the reaction is visible with nothing else playing.
 function useDemo() {
-  ensureCtx(); stopSource();
+  sessionType('auto'); ensureCtx(); stopSource();
   const out = actx.createGain(); out.gain.value = .5; out.connect(analyser); analyser.connect(actx.destination); srcNode = out;
   const nbuf = actx.createBuffer(1, actx.sampleRate, actx.sampleRate), nd = nbuf.getChannelData(0);
   for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
@@ -2585,6 +2604,8 @@ if (!canCapture || PHONE) {
   const m = $('srcMic'), t = $('srcTab'); m.classList.add('main'); m.querySelector('small').textContent = 'Listens to the room. Play the music on a speaker nearby.'; m.parentNode.prepend(m);
   if (!canCapture) t.hidden = true; else { t.classList.remove('main'); t.parentNode.append(t); t.querySelector('small').textContent = 'Rarely works on a phone, but this browser offers it.'; }
 }
+// iPad and iPhone pause other apps' music when a page opens the mic unless Safari grants a mixed session (see useMic).
+if (MIX) $('srcMic').querySelector('small').textContent = 'Listens to the room. Music playing on this device may pause while the microphone is open; if it does, play it on a speaker or another device nearby.';
 if (!document.documentElement.requestFullscreen) $('bFull').hidden = true;
 if (!gl) {
   say('This browser has no WebGL2, which the visualizer needs. A current Chrome, Edge or Firefox will run it.');

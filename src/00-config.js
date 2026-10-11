@@ -8,7 +8,7 @@ const DEFAULTS = {
   bright: 1, trail: 1, glow: 1, hueShift: 0, sat: 1,                  // picture
   cam: 1, spaces: true,                                               // camera
   auto: true, sceneSec: 30, transSec: 2.4, favOnly: false, detail: 0, // scenes
-  fav: {}, hide: {}, micId: ''
+  fav: {}, hide: {}, micId: '', mixApps: true   // mixApps: on iPad/iPhone, try to keep other apps' music playing while the mic is open
 };
 const STORE_KEY = 'afterimage.settings.v3';
 const CFG = (() => {
