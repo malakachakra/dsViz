@@ -177,7 +177,7 @@ if (!canCapture || PHONE) {
   if (!canCapture) t.hidden = true; else { t.classList.remove('main'); t.parentNode.append(t); t.querySelector('small').textContent = 'Rarely works on a phone, but this browser offers it.'; }
 }
 // iPad and iPhone pause other apps' music when a page opens the mic unless Safari grants a mixed session (see useMic).
-if (MIX) $('srcMic').querySelector('small').textContent = 'Listens to the room. Music playing on this device may pause while the microphone is open; if it does, play it on a speaker or another device nearby.';
+if (MIX) $('srcMic').querySelector('small').textContent = 'Listens to the room. iOS pauses music playing on this device while a web page holds the microphone, so play it on a speaker or another device nearby.';
 if (!document.documentElement.requestFullscreen) $('bFull').hidden = true;
 if (!gl) {
   say('This browser has no WebGL2, which the visualizer needs. A current Chrome, Edge or Firefox will run it.');

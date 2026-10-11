@@ -15,11 +15,13 @@ async function useTab() {
   attachStream(s); sourceKind = 'tab';
   return 'Tab / system audio';
 }
-// iPad and iPhone: opening the microphone normally switches the whole device to "play and record", and iOS pauses
-// whatever Spotify or Music was playing. Safari's Audio Session API can ask for an "ambient" session instead, which
-// lets other apps keep playing; Apple's own rules say that session has no microphone input, so if it comes up deaf
-// the mic is reopened the normal way and the attempt is not repeated. There is no third option on iOS: nothing a
-// web page can do opens the mic there without one of the two giving way.
+// iPad and iPhone: opening the microphone switches the whole device to "play and record", and iOS pauses whatever
+// Spotify or Music was playing. Safari's Audio Session API can ask for an "ambient" session instead, which lets other
+// apps keep playing, but iOS refuses to open the microphone in it ("AudioSession category is not compatible with
+// audio capture", iPadOS 2026-10) and Apple's rules give that session no input anyway. The ask is still made once,
+// in case a later iOS allows it: on refusal, or if the mic comes up deaf, the mic opens the normal way in the same
+// tap and the ask is not repeated. There is no third option: nothing a web page can do opens the mic on iOS
+// without one of the two giving way.
 const MIX = !!(navigator.audioSession && TOUCH);
 function sessionType(t) { try { if (navigator.audioSession) navigator.audioSession.type = t; } catch (e) {} }
 async function useMic() {
@@ -27,11 +29,14 @@ async function useMic() {
   // Echo and noise filtering stay off (they strip music), but the browser may level the mic: asking for it fully
   // raw gave a dead-quiet signal on some Windows audio drivers.
   const want = id => ({ audio: Object.assign({ echoCancellation: false, noiseSuppression: false, autoGainControl: true }, id ? { deviceId: { exact: id } } : {}) });
-  const mixing = MIX && CFG.mixApps;
+  const open = async () => {
+    try { return await navigator.mediaDevices.getUserMedia(want(CFG.micId)); }
+    catch (err) { if (!CFG.micId || (err.name !== 'OverconstrainedError' && err.name !== 'NotFoundError')) throw err; CFG.micId = ''; return navigator.mediaDevices.getUserMedia(want('')); }
+  };
+  let mixing = MIX && CFG.mixApps, s;
   sessionType(mixing ? 'ambient' : 'auto');
-  let s;
-  try { s = await navigator.mediaDevices.getUserMedia(want(CFG.micId)); }
-  catch (err) { if (!CFG.micId || (err.name !== 'OverconstrainedError' && err.name !== 'NotFoundError')) throw err; CFG.micId = ''; s = await navigator.mediaDevices.getUserMedia(want('')); }
+  if (mixing) { try { s = await open(); } catch (err) { mixing = false; CFG.mixApps = false; saveCfg(); sessionType('auto'); } }   // refused: the normal way, now
+  if (!s) s = await open();
   attachStream(s); sourceKind = 'mic'; micLabel = s.getAudioTracks()[0].label || 'Microphone';
   listMics(s.getAudioTracks()[0].getSettings().deviceId);
   if (mixing) {      // watch the first ten seconds: exact digital silence for 2.5 s means the mixed session gave no input

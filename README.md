@@ -17,7 +17,7 @@ Open `index.html` in Chrome or Edge on a computer, then choose where the music c
 
 - **Capture tab or system audio.** Pick the window, tab or screen that is playing, then tick the "Share audio" box at the bottom of the browser's dialog before confirming. Without that box the visualizer hears nothing; the browser owns the dialog, so the page cannot tick it for you. To skip the dialog altogether, pick a loopback input (Windows "Stereo Mix", or a virtual cable) as the Microphone: dsViz remembers the choice.
 - **Play audio files.** Choose files, or drop them anywhere on the page.
-- **Microphone.** Listens to the room. Pick which microphone under Settings. On an iPad or iPhone, iOS normally pauses music playing on that same device the moment a web page opens the microphone; dsViz asks Safari for a shared audio session so the music carries on, and if that leaves the microphone deaf on your iOS version it falls back to the normal way (the music then pauses, so play it on a speaker or another device instead).
+- **Microphone.** Listens to the room. Pick which microphone under Settings. On an iPad or iPhone, iOS pauses music playing on that same device while a web page holds the microphone, and refuses to open the microphone in the shared audio session that would let it carry on. That is the operating system's rule, not something the page can change: play the music on a speaker or another device nearby.
 - **Demo beat.** A built-in loop, to see how it reacts.
 
 It needs a browser with WebGL2, and is built for desktop Chrome and Edge. On a phone, choose Microphone or audio files (phones cannot capture another app's audio); swipe across the picture to change scene, and Settings is the tab on the right edge.
