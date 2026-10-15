@@ -81,7 +81,10 @@ body.dash-open #hud { right: var(--dash); }
 #micRow { display: grid; grid-template-columns: 96px minmax(0, 1fr); align-items: center; gap: 10px; }
 select { background: rgba(244, 241, 255, .08); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; min-width: 0; width: 100%; }
 select option { background: #15111f; }
+#groupBtns { gap: 4px; }
+#groupBtns button { flex: 1; padding: 6px 4px; }
 #sceneList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+#sceneList li.out { display: none; }
 #sceneList li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 6px; padding: 3px 0; border-top: 1px solid rgba(244, 241, 255, .07); }
 #sceneList .go { border: 0; border-radius: 6px; padding: 5px 6px; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #sceneList li.cur .go { color: var(--accent); }
@@ -107,7 +110,7 @@ body.nocursor, body.nocursor * { cursor: none; }
 
 <section id="start" aria-labelledby="ttl">
   <h1 id="ttl">dsViz</h1>
-  <p>A feedback visualizer that moves with whatever you play. Choose where the music comes from.</p>
+  <p>A feedback visualizer that moves with whatever you play. Choose where the music comes from. Nothing is being listened to yet: the picture behind this card runs on a built-in stand-in until you choose.</p>
   <div class="sources">
     <button id="srcTab" class="main" type="button"><b>Capture tab or system audio</b><small>Pick the window, tab or screen that is playing, then tick the "Share audio" box at the bottom of the dialog. Without it the visualizer hears nothing.</small></button>
     <label class="pick"><input id="srcFile" type="file" accept="audio/*,video/*" multiple><b>Play audio files</b><small>Choose files, or drop them anywhere on the page.</small></label>
@@ -142,7 +145,7 @@ body.nocursor, body.nocursor * { cursor: none; }
   <section>
     <h3>Sound in</h3>
     <div id="inLvl" title="How loud the incoming sound is"><i id="inBar"></i></div>
-    <p id="inTxt">No source chosen yet.</p>
+    <p id="inTxt">Not listening yet: the picture runs on a built-in stand-in.</p>
     <label id="micRow" for="micPick" hidden><span>Microphone</span><select id="micPick"></select></label>
   </section>
   <section id="secMusic"><h3>Music<span class="h3btns"><button type="button" data-rand="secMusic" title="Random settings for this section">Random</button><button type="button" data-def="secMusic" title="Back to the defaults for this section">Default</button></span></h3></section>
@@ -168,6 +171,7 @@ body.nocursor, body.nocursor * { cursor: none; }
       <button id="bLink" type="button" title="Copy a link that opens on this scene, in this space">Copy link</button>
     </div>
     <p class="hint">Fav keeps a scene in the Favourites-only rotation. Hide removes it from Auto, Next and Prev. Copy link copies an address that opens on this scene.</p>
+    <div class="btns" id="groupBtns"></div>
     <ul id="sceneList"></ul>
   </section>
   <section>

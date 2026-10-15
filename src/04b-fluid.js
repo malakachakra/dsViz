@@ -64,7 +64,7 @@ const F = {
 // ---------- Camera: where we look at the picture from ----------
 // Kicks push it in, every eighth beat it swings to a new angle, a change in the song swings it further.
 // In a 3D space it also turns to face somewhere new and keeps travelling forward.
-const CAM = { yaw: 0, pitch: 0, roll: 0, dist: 1, vy: 0, vp: 0, vr: 0, vd: 0, ty: 0, tp: 0, tr: 0, mark: -1, side: 1, heading: 0, headT: 0, vh: 0, travel: 0, px: 0, pz: 0, lastAmt: 1 };
+const CAM = { yaw: 0, pitch: 0, roll: 0, dist: 1, vy: 0, vp: 0, vr: 0, vd: 0, ty: 0, tp: 0, tr: 0, mark: -1, side: 1, heading: 0, headT: 0, vh: 0, travel: 0, px: 0, pz: 0, lastAmt: 1, orb: 0 };
 const clampN = (x, a, b) => Math.max(a, Math.min(b, x));
 function camUpdate(dt, time) {
   const amt = CFG.cam, live = amt > 0 ? 1 : 0, en = Math.min(1.5, A.energy);
@@ -81,6 +81,7 @@ function camUpdate(dt, time) {
   CAM.vy = sp(CAM.yaw, CAM.vy, gy, 9, 3.6); CAM.vp = sp(CAM.pitch, CAM.vp, gp, 9, 3.6); CAM.vr = sp(CAM.roll, CAM.vr, gr, 14, 4.5); CAM.vd = sp(CAM.dist, CAM.vd, gd, 60, 9);
   CAM.yaw += CAM.vy * dt; CAM.pitch += CAM.vp * dt; CAM.roll += CAM.vr * dt; CAM.dist = clampN(CAM.dist + CAM.vd * dt, .7, 1.1);
   CAM.headT += dt * .05 * en * CAM.side;
+  CAM.orb += dt * (.10 + .22 * en) * CAM.side;                           // the slow circle the eye makes around the picture
   CAM.vh = sp(CAM.heading, CAM.vh, CAM.headT, 4, 3.4); CAM.heading += CAM.vh * dt;
   const v = (.16 + .4 * en + .9 * Math.min(1.5, A.kick)) * CFG.speed * Math.min(1, amt + .3), h = (CAM.heading + CAM.yaw * 1.5) * amt;
   CAM.travel += v * dt; CAM.px -= Math.sin(h) * v * dt; CAM.pz -= Math.cos(h) * v * dt;
@@ -89,7 +90,8 @@ const camVec = new Float32Array(4), flyVec = new Float32Array(4);
 const STAGES = ['Flat', 'Tunnel', 'Dome', 'Floor'];
 function camFor(S) {   // each scene can scale the motion (cam), cap it (camCap) and add a resting pose (camBase)
   const P = S.P, amt = CFG.cam, m = Math.min((P.cam == null ? 1 : P.cam) * amt, P.camCap || 9), b = P.camBase || {}, st = S.stage || 0;
-  if (st === 0) { camVec[0] = clampN(CAM.yaw * m, -.8, .8) + (b.yaw || 0); camVec[1] = clampN(CAM.pitch * m, -.6, .6) + (b.pitch || 0); camVec[2] = CAM.roll * m; camVec[3] = (1 - (1 - CAM.dist) * Math.min(m, 1.5)) * (b.dist || 1); }
+  const om = P.orbit ? Math.min(m, 1.5) * .09 : 0, ox = Math.cos(CAM.orb) * om, oy = Math.sin(CAM.orb) * om * .6;   // the orbit: a small circle added to wherever the camera is heading, only for scenes built in 3D (orbit: true); a flat picture would just wobble
+  if (st === 0) { camVec[0] = clampN(CAM.yaw * m + ox, -.8, .8) + (b.yaw || 0); camVec[1] = clampN(CAM.pitch * m + oy, -.6, .6) + (b.pitch || 0); camVec[2] = CAM.roll * m; camVec[3] = (1 - (1 - CAM.dist) * Math.min(m, 1.5)) * (b.dist || 1); }
   else if (st === 1) { camVec[0] = CAM.yaw * 1.7 * amt; camVec[1] = CAM.pitch * 1.7 * amt; camVec[2] = (CAM.roll * 2 + CAM.heading * .35) * amt; camVec[3] = 1; }
   else if (st === 2) { camVec[0] = (CAM.heading + CAM.yaw * 2) * amt; camVec[1] = clampN(CAM.pitch * 1.8 * amt, -.7, .7); camVec[2] = CAM.roll * amt; camVec[3] = 1; }
   else { camVec[0] = (CAM.heading + CAM.yaw * 1.5) * amt; camVec[1] = -.17 + clampN(CAM.pitch * .8 * amt, -.2, .3); camVec[2] = CAM.roll * 1.6 * amt; camVec[3] = 1; }

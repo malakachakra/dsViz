@@ -8,7 +8,14 @@ const DETAIL = [['Auto', 1080], ['720p', 720], ['1080p', 1080], ['1440p', 1440],
 // Which 3D spaces suit which scene (1 tunnel, 2 dome, 3 floor). Scenes not listed are either flat or already 3D.
 const SPACES = { 'Plasma Tide': [1, 2], 'Prism Cathedral': [2, 3], 'Aurora Veil': [2], 'Ink Bloom': [3], 'Solar Petals': [1], 'Julia Garden': [1, 2, 3], 'Silk Ribbons': [1],
   'Neon Horizon': [2], 'Velvet Smoke': [2], 'Oil Slick': [3], 'Acrylic Pour': [3], 'Glass Tide': [1], 'Pool Floor': [3], 'Quicksilver': [3], 'Petri': [2, 3], 'Maelstrom': [3, 1], 'Hall of Mirrors': [2],
-  'Slime Mould': [2, 3], 'Lichtenberg': [2], 'Cathode': [1], 'Deep Field': [1, 3], 'Loom': [1, 3], 'Henry': [2], 'Henry Deux': [2], 'Henry 3': [2, 3] };
+  'Slime Mould': [2, 3], 'Lichtenberg': [2], 'Cathode': [1], 'Deep Field': [1, 3], 'Loom': [1, 3], 'Henry': [2], 'Henry Deux': [2], 'Henry 3': [2, 3],
+  'Vinyl': [3], 'Harp': [1, 2], 'Cymatics': [3], 'Shatter': [1, 2], 'Fireflies': [2], 'Coral': [2, 3], 'Heartwood': [3], 'Pendulum': [1] };
+// The four groups the scene list is split into in Settings. A scene not listed lands in Light.
+const GROUPS = {
+  Liquid: ['Ink Bloom', 'Velvet Smoke', 'Oil Slick', 'Acrylic Pour', 'Glass Tide', 'Moon Pool', 'Pool Floor', 'Quicksilver', 'Gel Orbit', 'Maelstrom', 'Downpour'],
+  Light: ['Plasma Tide', 'Event Horizon', 'Prism Cathedral', 'Aurora Veil', 'Solar Petals', 'Starforge', 'Silk Ribbons', 'Hall of Mirrors', 'Lichtenberg', 'Deep Field', 'Shatter', 'Tungsten'],
+  Life: ['Julia Garden', 'Petri', 'Slime Mould', 'Murmuration', 'Henry', 'Henry Deux', 'Henry 3', 'Fireflies', 'Coral', 'Heartwood'],
+  Signal: ['Neon Horizon', 'Ridgeline', 'Cathode', 'Loom', 'Vinyl', 'Lathe', 'Harp', 'Cymatics', 'Pendulum'] };
 // What a scene is called in the address bar: its name in kebab-case, except the Henrys, which go by the triangle.
 const SLUGS = { 'Henry': 'Δ', 'Henry Deux': 'Δ2', 'Henry 3': 'Δ3' };
 let downProg, upProg;
@@ -20,6 +27,7 @@ function build() {
     if (P.sim) P.simProg = program(VERT, HEAD + P.sim + SIM_MAIN);
     if (P.agents) AGENTS.setup(P);
     P.stages = SPACES[P.name] || [];
+    P.group = Object.keys(GROUPS).find(g => GROUPS[g].includes(P.name)) || 'Light';
     P.slug = SLUGS[P.name] || P.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
   }
 }
@@ -143,7 +151,7 @@ function tick(now) {
   const raw = (now - last) / 1000; last = now;
   const dt = Math.min(1 / 20, Math.max(1 / 240, raw));
   resize(); clock += dt; sinceSwitch += dt;
-  if (started) analyze(dt); else fakeFeatures(clock, dt);
+  if (started) analyze(dt); else fakeFeatures(clock, dt, true);     // nothing chosen yet: a calm stand-in, not a beat
   if (CFG.auto && !old && ((sinceSwitch > CFG.sceneSec * .8 && A.onKick) || sinceSwitch > CFG.sceneSec * (A.live ? 1.2 : 1.5))) nextRandom();
   render(dt); meters(dt);
   // On Auto detail, drop internal resolution if this machine cannot hold ~45 fps.

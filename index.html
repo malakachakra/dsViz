@@ -91,7 +91,10 @@ body.dash-open #hud { right: var(--dash); }
 #micRow { display: grid; grid-template-columns: 96px minmax(0, 1fr); align-items: center; gap: 10px; }
 select { background: rgba(244, 241, 255, .08); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; min-width: 0; width: 100%; }
 select option { background: #15111f; }
+#groupBtns { gap: 4px; }
+#groupBtns button { flex: 1; padding: 6px 4px; }
 #sceneList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+#sceneList li.out { display: none; }
 #sceneList li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 6px; padding: 3px 0; border-top: 1px solid rgba(244, 241, 255, .07); }
 #sceneList .go { border: 0; border-radius: 6px; padding: 5px 6px; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #sceneList li.cur .go { color: var(--accent); }
@@ -120,7 +123,7 @@ body.nocursor, body.nocursor * { cursor: none; }
 
 <section id="start" aria-labelledby="ttl">
   <h1 id="ttl">dsViz</h1>
-  <p>A feedback visualizer that moves with whatever you play. Choose where the music comes from.</p>
+  <p>A feedback visualizer that moves with whatever you play. Choose where the music comes from. Nothing is being listened to yet: the picture behind this card runs on a built-in stand-in until you choose.</p>
   <div class="sources">
     <button id="srcTab" class="main" type="button"><b>Capture tab or system audio</b><small>Pick the window, tab or screen that is playing, then tick the "Share audio" box at the bottom of the dialog. Without it the visualizer hears nothing.</small></button>
     <label class="pick"><input id="srcFile" type="file" accept="audio/*,video/*" multiple><b>Play audio files</b><small>Choose files, or drop them anywhere on the page.</small></label>
@@ -155,7 +158,7 @@ body.nocursor, body.nocursor * { cursor: none; }
   <section>
     <h3>Sound in</h3>
     <div id="inLvl" title="How loud the incoming sound is"><i id="inBar"></i></div>
-    <p id="inTxt">No source chosen yet.</p>
+    <p id="inTxt">Not listening yet: the picture runs on a built-in stand-in.</p>
     <label id="micRow" for="micPick" hidden><span>Microphone</span><select id="micPick"></select></label>
   </section>
   <section id="secMusic"><h3>Music<span class="h3btns"><button type="button" data-rand="secMusic" title="Random settings for this section">Random</button><button type="button" data-def="secMusic" title="Back to the defaults for this section">Default</button></span></h3></section>
@@ -181,6 +184,7 @@ body.nocursor, body.nocursor * { cursor: none; }
       <button id="bLink" type="button" title="Copy a link that opens on this scene, in this space">Copy link</button>
     </div>
     <p class="hint">Fav keeps a scene in the Favourites-only rotation. Hide removes it from Auto, Next and Prev. Copy link copies an address that opens on this scene.</p>
+    <div class="btns" id="groupBtns"></div>
     <ul id="sceneList"></ul>
   </section>
   <section>
@@ -511,12 +515,13 @@ function settle(dt) {   // no source: let everything relax to silence
   decay(dt);
 }
 
-// Stand-in signal for automated checks: a 120 bpm pattern written straight into the features.
-function fakeFeatures(time, dt) {
+// Stand-in signal for automated checks: a 120 bpm pattern written straight into the features. Behind the start
+// card it runs calm (no beat, half level), so the picture drifts instead of looking like it is already listening.
+function fakeFeatures(time, dt, calm) {
   A.onBeat = A.onKick = false; A.onSwing = (time % 9) < dt;
-  const ph = (time * 2) % 1, bar = Math.floor(time * 2) % 4, k = Math.exp(-ph * 7), sn = (bar % 2 === 1) ? Math.exp(-ph * 9) : 0, hat = Math.exp(-((time * 4) % 1) * 12);
-  if (ph < dt * 2) { A.onBeat = A.onKick = true; A.kick = A.beat = CFG.punch; A.beats++; A.hueT += .07; }
-  const I = CFG.intensity;
+  const ph = (time * 2) % 1, bar = Math.floor(time * 2) % 4, k = calm ? .15 : Math.exp(-ph * 7), sn = (bar % 2 === 1 && !calm) ? Math.exp(-ph * 9) : 0, hat = calm ? .2 : Math.exp(-((time * 4) % 1) * 12);
+  if (ph < dt * 2 && !calm) { A.onBeat = A.onKick = true; A.kick = A.beat = CFG.punch; A.beats++; A.hueT += .07; }
+  const I = CFG.intensity * (calm ? .5 : 1);
   A.bass = (.55 + 2.3 * k) * I * CFG.bass; A.mid = (.8 + 1.3 * sn + .3 * Math.sin(time * 1.3)) * I * CFG.mid; A.treb = (.6 + 1.6 * hat * (.5 + .5 * Math.sin(time * .7))) * I * CFG.treb;
   A.bassA = ease(A.bassA, A.bass, 14, dt); A.midA = ease(A.midA, A.mid, 10, dt); A.trebA = ease(A.trebA, A.treb, 14, dt);
   A.vol = (.8 + .6 * k) * I; A.energy = 1; A.level = .6 + .3 * k; decay(dt);
@@ -786,7 +791,7 @@ const F = {
 // ---------- Camera: where we look at the picture from ----------
 // Kicks push it in, every eighth beat it swings to a new angle, a change in the song swings it further.
 // In a 3D space it also turns to face somewhere new and keeps travelling forward.
-const CAM = { yaw: 0, pitch: 0, roll: 0, dist: 1, vy: 0, vp: 0, vr: 0, vd: 0, ty: 0, tp: 0, tr: 0, mark: -1, side: 1, heading: 0, headT: 0, vh: 0, travel: 0, px: 0, pz: 0, lastAmt: 1 };
+const CAM = { yaw: 0, pitch: 0, roll: 0, dist: 1, vy: 0, vp: 0, vr: 0, vd: 0, ty: 0, tp: 0, tr: 0, mark: -1, side: 1, heading: 0, headT: 0, vh: 0, travel: 0, px: 0, pz: 0, lastAmt: 1, orb: 0 };
 const clampN = (x, a, b) => Math.max(a, Math.min(b, x));
 function camUpdate(dt, time) {
   const amt = CFG.cam, live = amt > 0 ? 1 : 0, en = Math.min(1.5, A.energy);
@@ -803,6 +808,7 @@ function camUpdate(dt, time) {
   CAM.vy = sp(CAM.yaw, CAM.vy, gy, 9, 3.6); CAM.vp = sp(CAM.pitch, CAM.vp, gp, 9, 3.6); CAM.vr = sp(CAM.roll, CAM.vr, gr, 14, 4.5); CAM.vd = sp(CAM.dist, CAM.vd, gd, 60, 9);
   CAM.yaw += CAM.vy * dt; CAM.pitch += CAM.vp * dt; CAM.roll += CAM.vr * dt; CAM.dist = clampN(CAM.dist + CAM.vd * dt, .7, 1.1);
   CAM.headT += dt * .05 * en * CAM.side;
+  CAM.orb += dt * (.10 + .22 * en) * CAM.side;                           // the slow circle the eye makes around the picture
   CAM.vh = sp(CAM.heading, CAM.vh, CAM.headT, 4, 3.4); CAM.heading += CAM.vh * dt;
   const v = (.16 + .4 * en + .9 * Math.min(1.5, A.kick)) * CFG.speed * Math.min(1, amt + .3), h = (CAM.heading + CAM.yaw * 1.5) * amt;
   CAM.travel += v * dt; CAM.px -= Math.sin(h) * v * dt; CAM.pz -= Math.cos(h) * v * dt;
@@ -811,7 +817,8 @@ const camVec = new Float32Array(4), flyVec = new Float32Array(4);
 const STAGES = ['Flat', 'Tunnel', 'Dome', 'Floor'];
 function camFor(S) {   // each scene can scale the motion (cam), cap it (camCap) and add a resting pose (camBase)
   const P = S.P, amt = CFG.cam, m = Math.min((P.cam == null ? 1 : P.cam) * amt, P.camCap || 9), b = P.camBase || {}, st = S.stage || 0;
-  if (st === 0) { camVec[0] = clampN(CAM.yaw * m, -.8, .8) + (b.yaw || 0); camVec[1] = clampN(CAM.pitch * m, -.6, .6) + (b.pitch || 0); camVec[2] = CAM.roll * m; camVec[3] = (1 - (1 - CAM.dist) * Math.min(m, 1.5)) * (b.dist || 1); }
+  const om = P.orbit ? Math.min(m, 1.5) * .09 : 0, ox = Math.cos(CAM.orb) * om, oy = Math.sin(CAM.orb) * om * .6;   // the orbit: a small circle added to wherever the camera is heading, only for scenes built in 3D (orbit: true); a flat picture would just wobble
+  if (st === 0) { camVec[0] = clampN(CAM.yaw * m + ox, -.8, .8) + (b.yaw || 0); camVec[1] = clampN(CAM.pitch * m + oy, -.6, .6) + (b.pitch || 0); camVec[2] = CAM.roll * m; camVec[3] = (1 - (1 - CAM.dist) * Math.min(m, 1.5)) * (b.dist || 1); }
   else if (st === 1) { camVec[0] = CAM.yaw * 1.7 * amt; camVec[1] = CAM.pitch * 1.7 * amt; camVec[2] = (CAM.roll * 2 + CAM.heading * .35) * amt; camVec[3] = 1; }
   else if (st === 2) { camVec[0] = (CAM.heading + CAM.yaw * 2) * amt; camVec[1] = clampN(CAM.pitch * 1.8 * amt, -.7, .7); camVec[2] = CAM.roll * amt; camVec[3] = 1; }
   else { camVec[0] = (CAM.heading + CAM.yaw * 1.5) * amt; camVec[1] = -.17 + clampN(CAM.pitch * .8 * amt, -.2, .3); camVec[2] = CAM.roll * 1.6 * amt; camVec[3] = 1; }
@@ -1061,7 +1068,8 @@ PRESETS.push({
   init(S) { const n = 900; S.n = n; S.x = new Float32Array(n); S.y = new Float32Array(n); S.z = new Float32Array(n); S.vx = new Float32Array(n); S.vy = new Float32Array(n); S.vz = new Float32Array(n); S.k = new Float32Array(n); S.orb = Math.random() * TAU; S.dir = Math.random() < .5 ? -1 : 1;
     for (let i = 0; i < n; i++) { const a = Math.random() * TAU, r = Math.sqrt(Math.random()) * 1.5; S.x[i] = Math.cos(a) * r; S.z[i] = Math.sin(a) * r; S.y[i] = (Math.random() - .5) * .1; S.k[i] = Math.random(); } },
   draw(S, dt) {
-    const amt = CFG.cam, swirl = (.5 + 1.1 * A.midA) * S.dir, push = A.onKick ? (1.5 + A.bass * .4) * CFG.punch : 0, pull = .35 + .25 * A.bassA;
+    const amt = CFG.cam, swirl = (.5 + 1.1 * A.midA) * S.dir, push = A.onKick ? (1.8 + A.bass * .45) * CFG.punch : 0, pull = .35 + .25 * A.bassA;
+    if (A.onKick) S.r0 = rnd(.2, 1.3);                                        // a kick throws the whole disc outward, and harder in one ring of it, so a density wave rolls out
     S.orb += dt * (.10 + .12 * Math.min(2, A.midA)) * S.dir * Math.min(1, amt + .2);
     const yaw = S.orb + (CAM.heading * .6 + CAM.yaw * 2.5) * amt, tilt = .6 + CAM.pitch * 1.8 * amt, roll = CAM.roll * 1.5 * amt, dist = 3.3 * (1 - (1 - CAM.dist) * 1.6 * Math.min(1, amt));
     const cy = Math.cos(yaw), sy = Math.sin(yaw), ct = Math.cos(tilt), st = Math.sin(tilt), cr = Math.cos(roll), sr = Math.sin(roll), f = 2.1;
@@ -1070,9 +1078,9 @@ PRESETS.push({
       const arm = Math.sin(Math.atan2(z, x) * 3 - r * 4 + S.mt * .4);     // three loose spiral arms
       const ax = (-z / r) * swirl * (.4 + .6 * k) / (.35 + r) - x / r * pull * (r - .25 - .6 * k) + (x / r) * arm * .25;
       const az = (x / r) * swirl * (.4 + .6 * k) / (.35 + r) - z / r * pull * (r - .25 - .6 * k) + (z / r) * arm * .25;
-      const damp = Math.max(0, 1 - 2.2 * dt);
-      S.vx[i] = (S.vx[i] + ax * dt + (x / r) * push * (.3 + k)) * damp; S.vz[i] = (S.vz[i] + az * dt + (z / r) * push * (.3 + k)) * damp;
-      S.vy[i] = (S.vy[i] - y * 9 * dt + (push ? (Math.random() - .5) * push * .9 : 0)) * damp;      // a kick puffs the disc up, then it settles flat
+      const damp = Math.max(0, 1 - 2.2 * dt), ring = push ? Math.max(0, 1 - Math.abs(r - S.r0) / .3) * (.5 + k) : 0, all = .55 * (.3 + k) + ring;
+      S.vx[i] = (S.vx[i] + ax * dt + (x / r) * push * all) * damp; S.vz[i] = (S.vz[i] + az * dt + (z / r) * push * all) * damp;
+      S.vy[i] = (S.vy[i] - y * 9 * dt + (push ? (Math.random() - .5) * push * (.5 + ring) : 0)) * damp;      // the disc puffs up, the ring most, then it settles flat
       x += S.vx[i] * dt; y += S.vy[i] * dt; z += S.vz[i] * dt;
       if (r > 2.3) { const a = Math.random() * TAU; x = Math.cos(a) * .05; z = Math.sin(a) * .05; y = 0; S.vx[i] = S.vy[i] = S.vz[i] = 0; }
       S.x[i] = x; S.y[i] = y; S.z[i] = z;
@@ -1082,7 +1090,7 @@ PRESETS.push({
       palJS(A.hue + k * .22 + sp * .12, tmpC);
       D.sprite(cr * px + sr * py, -sr * px + cr * py, (.007 + .009 * k) * sc * (1 + .4 * Math.min(2, A.trebA)) * tw, 0, tmpC.r, tmpC.g, tmpC.b, (.2 + .4 * sp + .35 * A.beat) * Math.min(1.6, sc * sc * 1.6) * Math.min(1, .25 + r * 1.6) * tw, 0, 0, .9, 1);
     }
-    const sc0 = f / dist; palJS(A.hue + .1, tmpC); D.sprite(0, 0, (.14 + .1 * A.bassA + .15 * A.kick) * sc0, 0, tmpC.r, tmpC.g, tmpC.b, .05 + .22 * A.kick, 0, 0, 1, 1);
+    const sc0 = f / dist; palJS(A.hue + .1, tmpC); D.sprite(0, 0, (.14 + .1 * A.bassA) * sc0, 0, tmpC.r, tmpC.g, tmpC.b, .05 + .06 * A.kick, 0, 0, 1, 1);
   }
 });
 
@@ -1110,6 +1118,7 @@ PRESETS.push({
   draw(S) {
     const asp = D.aspect, amp = .26 + .1 * A.bassA;
     for (const sg of [1, -1]) D.line(240, (i, u, p) => { const s = sampleSpec(.02 + mirrorU(u) * .92), e = Math.sin(u * Math.PI); p.x = (u * 2 - 1) * asp * .9; p.y = .08 + sg * (s * amp * e + .004); palJS(A.hue + .55 + s * .3 + (sg < 0 ? .08 : 0), p, (.2 + 1.1 * s) * e); }, { w: .006, gain: sg > 0 ? 1 : .8 });
+    if (A.onKick) D.line(2, (i, u, p) => { p.x = (u * 2 - 1) * asp * 1.05; p.y = .055; p.r = 1; p.g = .35; p.b = .6; }, { w: .009, gain: 1.4 * Math.min(1.5, CFG.punch), core: .7 });   // a kick: a grid line lit at the horizon, which the ground then carries toward you
   }
 });
 
@@ -1164,16 +1173,21 @@ PRESETS.push({
     vec3 c=P(p)*clamp(1.+dot(g,vec2(-.6,.7))*5., .45, 1.7);       // side light gives the smoke some body
     c+=glow(p)*.55+vec3(.010,.007,.026);
     return c*vig(p); }`,
-  em(S, k) { const a = k * TAU / 3 + S.mt * .06, x = Math.cos(a) * D.aspect * .55, y = Math.sin(a) * .62, tx = .3 * Math.sin(S.mt * .23 + k * 2), ty = .3 * Math.cos(S.mt * .19 + k * 3), l = Math.hypot(tx - x, ty - y); return [x, y, (tx - x) / l, (ty - y) / l, [A.bassA, A.midA, A.trebA][k]]; },
+  em(S, k) { const a = k * TAU / 3 + S.mt * .06, x = Math.cos(a) * D.aspect * .55, y = Math.sin(a) * .62, j = S.j ? S.j[k] : [0, 0], tx = .3 * Math.sin(S.mt * .23 + k * 2) + j[0], ty = .3 * Math.cos(S.mt * .19 + k * 3) + j[1], l = Math.hypot(tx - x, ty - y); return [x, y, (tx - x) / l, (ty - y) / l, [A.bassA, A.midA, A.trebA][k]]; },
   force(S, dt) {
     for (let k = 0; k < 3; k++) { const [x, y, dx, dy, lv] = this.em(S, k), a = (2.5 + 10 * lv) * dt; F.splat(x, y, dx * a, dy * a, .16); }
-    if (A.onKick) F.burst(0, 0, .8 + .35 * A.bass, .13, 10);
+    if (A.onKick) {      // the kick is a gust out of the loudest jet, and all three jets swing to aim somewhere new, so the smoke trails out across the screen; they drift back over a few seconds
+      const lv = [A.bassA, A.midA, A.trebA], k = lv.indexOf(Math.max(...lv)), [x, y, dx, dy] = this.em(S, k);
+      F.burst(x + dx * .12, y + dy * .12, .8 + .35 * A.bass, .13, 10);
+      S.j = [0, 1, 2].map(() => [rnd(-.7, .7) * D.aspect, rnd(-.7, .7)]);
+    }
+    if (S.j) for (const j of S.j) { j[0] *= Math.max(0, 1 - dt * .5); j[1] *= Math.max(0, 1 - dt * .5); }
     for (let i = Math.floor(A.trebA * 1.5 * Math.random()); i > 0; i--) { const a = rnd(0, TAU); F.splat(rnd(-1, 1) * D.aspect, rnd(-1, 1), Math.cos(a) * .35, Math.sin(a) * .35, .07); }
   },
   draw(S) {
     for (let k = 0; k < 3; k++) { const [x, y, , , lv] = this.em(S, k); palJS(A.hue + k * .28, tmpC); D.sprite(x, y, .08 + .04 * lv, 0, tmpC.r, tmpC.g, tmpC.b, .12 + .3 * lv, 0, 0, 1, 1); }
     const R = .10 + .04 * A.bassA;
-    D.line(160, (i, u, p) => { const w = sampleWave(mirrorU(u)), a = u * TAU, r = R + w * .06; p.x = Math.cos(a) * r; p.y = Math.sin(a) * r; palJS(A.hue + .2 + u * .15, p, 1); }, { w: .012, closed: true, gain: .10 + .5 * A.kick, core: .3 });
+    D.line(160, (i, u, p) => { const w = sampleWave(mirrorU(u)), a = u * TAU, r = R + w * .06; p.x = Math.cos(a) * r; p.y = Math.sin(a) * r; palJS(A.hue + .2 + u * .15, p, 1); }, { w: .012, closed: true, gain: .10, core: .3 });
   }
 });
 
@@ -1196,8 +1210,8 @@ PRESETS.push({
   init(S) { S.v = [0, 1, 2].map(k => ({ ph: rnd(0, TAU), sp: rnd(.15, .3) * (k % 2 ? -1 : 1) })); },
   pos(S, k) { const v = S.v[k], a = S.mt * v.sp + v.ph; return [Math.cos(a) * D.aspect * .5 * (.6 + .4 * Math.sin(a * .7 + k)), Math.sin(a * 1.3 + k) * .6]; },
   force(S, dt) {
-    for (let k = 0; k < 3; k++) { const [x, y] = this.pos(S, k); F.swirl(x, y, (k % 2 ? -1 : 1) * (.6 + 4.5 * A.midA) * dt, .16); }
-    if (A.onKick) { S.kx = rnd(-.6, .6) * D.aspect; S.ky = rnd(-.6, .6); F.burst(S.kx, S.ky, .9 + .4 * A.bass, .12, 10); }
+    for (let k = 0; k < 3; k++) { const [x, y] = this.pos(S, k); F.swirl(x, y, (k % 2 ? -1 : 1) * (.6 + 4.5 * A.midA + 3 * A.kick) * dt, .16); }     // the whirlpools spin up on a kick
+    if (A.onKick) { S.kx = rnd(-.6, .6) * D.aspect; S.ky = rnd(-.6, .6); F.burst(S.kx, S.ky, .9 + .4 * A.bass, .12, 10); F.swirl(S.kx, S.ky, (Math.random() < .5 ? -1 : 1) * .5 * CFG.punch, .2); }   // and the film folds around where the drop fell
     const a = S.mt * .11; F.splat(0, 0, Math.cos(a) * A.bassA * dt * .8, Math.sin(a) * A.bassA * dt * .8, 1.1);
   },
   draw(S) {
@@ -1265,11 +1279,11 @@ PRESETS.push({
     return c*vig(p); }`,
   force(S, dt) {
     for (let k = 0; k < 2; k++) { const a = S.mt * (.22 + .06 * k) + k * 3.1, x = Math.cos(a) * D.aspect * .45, y = Math.sin(a * 1.4) * .5; F.swirl(x, y, (k ? -1 : 1) * (.5 + 3.5 * A.midA) * dt, .2); F.splat(x, y, -Math.sin(a) * A.bassA * dt * 2.5, Math.cos(a * 1.4) * A.bassA * dt * 2.5, .2); }
-    if (A.onKick) F.burst(0, 0, .9 + .4 * A.bass, .14, 10);
+    if (A.onKick) { S.kx = rnd(-.6, .6) * D.aspect; S.ky = rnd(-.6, .6); F.burst(S.kx, S.ky, .9 + .4 * A.bass, .14, 10); }
   },
   draw(S) {
     for (let k = 0; k < 2; k++) { const a = S.mt * (.22 + .06 * k) + k * 3.1, lv = k ? A.midA : A.bassA; D.sprite(Math.cos(a) * D.aspect * .45, Math.sin(a * 1.4) * .5, .09 + .04 * lv, 0, 1, 1, 1, .05 + .12 * lv, 0, 0, 1, 1); }
-    if (A.onKick) D.sprite(0, 0, .16, 0, 1, 1, 1, .8, 0, 0, 1, 1);
+    if (A.onKick) D.sprite(S.kx, S.ky, .16, 0, 1, 1, 1, .8, 0, 0, 1, 1);
     for (let i = Math.floor(A.trebA * Math.random() * 1.3); i > 0; i--) D.sprite(rnd(-1, 1) * D.aspect, rnd(-1, 1), rnd(.02, .04), 0, 1, 1, 1, .5, 0, 0, 1, 1);
   }
 });
@@ -1297,7 +1311,7 @@ vec3 env(vec3 r){     // a dark room with three soft light panels in the scene's
 const drop = (x, y, amp, r) => D.sprite(x, y, r, 0, amp, 0, 0, 1, 0, 0, 1, 1);
 
 PRESETS.push({
-  name: 'Moon Pool', accent: '#93c5fd', cam: .5, fit: false, camBase: { pitch: 1.4 }, sim: WAVE_SIM('1.7', '.997'), simSteps: 3,
+  name: 'Moon Pool', accent: '#93c5fd', cam: .5, fit: false, orbit: true, camBase: { pitch: 1.4 }, sim: WAVE_SIM('1.7', '.997'), simSteps: 3,
   warp: `vec3 warp(vec2 p){ vec3 c=mix(P(p*1.004), B(p*1.004), .25); return c*DK(.955); }`,
   comp: `#define SELF
   ` + WATER_LIB + `
@@ -1334,7 +1348,7 @@ PRESETS.push({
 });
 
 PRESETS.push({
-  name: 'Pool Floor', accent: '#22d3ee', sim: WAVE_SIM('1.7', '.996'), simSteps: 3,
+  name: 'Pool Floor', accent: '#22d3ee', orbit: true, sim: WAVE_SIM('1.7', '.996'), simSteps: 3,
   warp: `vec3 warp(vec2 p){ vec2 q=p*(1.-.006-.012*kick); vec3 c=mix(P(q), B(q), .1); return hueRot(c,.01)*DK(.955); }`,
   comp: WATER_LIB + `
   vec3 tile(vec2 q){
@@ -1349,27 +1363,37 @@ PRESETS.push({
     vec3 c=tile(q)*.7+P(q)*.8+glow(q)*.4;                            // tiles, plus light the music paints on the floor
     float l1=wlap(p), l2=wlap(p+n.xy*.03);
     vec3 cs=vec3(pow(max(0.,1.-l1*9.),4.), pow(max(0.,1.-(l1+l2)*4.5),4.), pow(max(0.,1.-l2*9.),4.));
-    c*=.5+.55*min(cs,vec3(6.))*(.7+.3*bassA);                        // caustics: the ripples focus the light
+    float spot=u0.z*exp(-dot(p-u0.xy,p-u0.xy)*3.);
+    c*=.5+.55*min(cs,vec3(6.))*(.7+.3*bassA+2.5*spot);               // caustics: the ripples focus the light; a kick throws a patch of sun where its drop fell
     c+=vec3(1.)*pow(max(dot(reflect(rd,wn(p,14.)),normalize(vec3(.2,.35,.9))),0.),70.)*.6;
     return c*vig(p); }`,
   simDraw(S, dt) {
     const asp = D.aspect;
-    if (A.onKick) { S.side = -(S.side || 1); for (let i = 0; i < 9; i++) drop(S.side * asp * .98, -1 + i * .25, (-.55 - .15 * A.bass) * CFG.punch, .09); drop(rnd(-.4, .4) * asp, rnd(-.4, .4), -1.2 * CFG.punch, .09); }
+    if (A.onKick) { S.side = -(S.side || 1); for (let i = 0; i < 9; i++) drop(S.side * asp * .98, -1 + i * .25, (-.55 - .15 * A.bass) * CFG.punch, .09); drop(S.kx, S.ky, -1.2 * CFG.punch, .09); }
     for (let i = Math.floor(A.trebA * 1.4 * Math.random() + (A.onBeat ? 2 : 0)); i > 0; i--) drop(rnd(-1, 1) * asp, rnd(-1, 1), .4, .026);
     const a = S.mt * .3; drop(Math.cos(a) * asp * .5, Math.sin(a * 1.3) * .5, .08 * A.midA, .04);
   },
+  init(S) { S.swT = -1; S.swNext = rnd(3, 6); S.swA = 0; },
+  update(S, dt) {
+    if (A.onKick) { S.kx = rnd(-.6, .6) * D.aspect; S.ky = rnd(-.6, .6); } S.u0[0] = S.kx || 0; S.u0[1] = S.ky || 0; S.u0[2] = Math.min(1.5, A.kick);
+    // now and then, and on a change in the song, a shimmer of light crosses the floor in some direction
+    if (S.swT < 0) { S.swNext -= dt; if (S.swNext < 0 || A.onSwing) { S.swT = 0; S.swA = rnd(0, TAU); S.swNext = rnd(5, 11); } }
+    else { S.swT += dt / 1.8; if (S.swT > 1) S.swT = -1; }
+  },
   draw(S) {
-    const R = .16 + .05 * A.bassA + .08 * A.kick;
-    D.line(220, (i, u, p) => { const w = sampleWave(mirrorU(u)), a = u * TAU + S.mt * .2, r = R + w * (.05 + .07 * A.midA); p.x = Math.cos(a) * r; p.y = Math.sin(a) * r; palJS(A.hue + .1 + u * .2, p, 1); }, { w: .012, closed: true, gain: .5, core: .5 });
+    if (S.swT < 0) return;
+    const asp = D.aspect, c = Math.cos(S.swA), s = Math.sin(S.swA), pos = (S.swT * 2 - 1) * 1.5, k = Math.sin(S.swT * Math.PI);
+    palJS(A.hue + .1, tmpC);
+    D.line(2, (i, u, p) => { const t = (u * 2 - 1) * 1.8; p.x = c * pos * asp - s * t * asp; p.y = s * pos + c * t; p.r = tmpC.r; p.g = tmpC.g; p.b = tmpC.b; }, { w: .06, gain: .35 * k, core: 0 });
   }
 });
 
 PRESETS.push({
-  name: 'Quicksilver', accent: '#d4d4f8', cam: 1.25, sim: WAVE_SIM('1.8', '.990'), simSteps: 3,
+  name: 'Quicksilver', accent: '#d4d4f8', cam: 1.25, orbit: true, sim: WAVE_SIM('1.8', '.990'), simSteps: 3,
   warp: `vec3 warp(vec2 p){ vec3 c=mix(P(p*1.01), B(p*1.01), .3); return c*DK(.94); }`,
   comp: WATER_LIB + ENV_LIB + `
   vec3 comp(vec2 p){
-    vec3 n=wn(p,11.), r=reflect(rd,n);
+    vec3 n=normalize(wn(p,11.)+vec3(u0.xy,0.)), r=reflect(rd,n);   // u0.xy: a kick tips the whole pool toward where it struck, and it rocks back
     float fres=pow(1.-max(dot(-rd,n),0.),4.);
     vec3 c=env(r)*(1.+.3*fres)*vec3(.92,.95,1.);
     c+=P(p+n.xy*.1)*.45+glow(p)*.3;                                  // coloured light caught in the surface
@@ -1379,16 +1403,22 @@ PRESETS.push({
   // Six speakers under the surface, each humming at its own pitch as loud as its slice of the spectrum.
   simDraw(S, dt) {
     for (let i = 0; i < 6; i++) { const [x, y] = this.src(S, i), lv = sampleSpec(.05 + i * .15); drop(x, y, .26 * lv * Math.sin(S.t * TAU * (2.2 + i * .9)), .055); }
-    if (A.onKick) drop(0, 0, (-1.5 - .4 * A.bass) * CFG.punch, .14);
+    if (A.onKick) drop(S.kx, S.ky, (-2.4 - .6 * A.bass) * CFG.punch, .14);
   },
   draw(S) {
     for (let i = 0; i < 6; i++) { const [x, y] = this.src(S, i), lv = sampleSpec(.05 + i * .15); palJS(A.hue + i * .12, tmpC); D.sprite(x, y, .07, 0, tmpC.r, tmpC.g, tmpC.b, .3 * lv, 0, 0, 1, 1); }
-    if (A.onKick) { palJS(A.hue + .5, tmpC); D.sprite(0, 0, .2, 0, tmpC.r, tmpC.g, tmpC.b, .5 * CFG.punch, 0, 0, 1, 1); }
+    if (A.onKick) { palJS(A.hue + .5, tmpC); D.sprite(S.kx, S.ky, .2, 0, tmpC.r, tmpC.g, tmpC.b, .5 * CFG.punch, 0, 0, 1, 1); }
+  },
+  init(S) { S.kx = S.ky = S.tx = S.ty = S.vx = S.vy = 0; },
+  update(S, dt) {
+    if (A.onKick) { S.kx = rnd(-.6, .6) * D.aspect; S.ky = rnd(-.6, .6); const l = Math.hypot(S.kx, S.ky) + 1e-3, j = 2.2 * Math.min(1.5, CFG.punch); S.vx += S.kx / l * j; S.vy += S.ky / l * j; }
+    S.vx += (-S.tx * 60 - S.vx * 7) * dt; S.vy += (-S.ty * 60 - S.vy * 7) * dt; S.tx += S.vx * dt; S.ty += S.vy * dt;   // a spring: the tilt overshoots and settles in about a second
+    S.u0[0] = S.tx; S.u0[1] = S.ty;
   }
 });
 
 PRESETS.push({
-  name: 'Gel Orbit', accent: '#fb7185', fit: false,
+  name: 'Gel Orbit', accent: '#fb7185', fit: false, orbit: true,
   warp: `vec3 warp(vec2 p){ vec2 q=rot(.004)*p*(1.012+.02*kick); vec3 c=mix(P(q), B(q), .12); return hueRot(c,.006)*DK(.965); }`,
   // Real 3D: blobs of gel marched ray by ray, with the camera orbiting them. The 2D picture is the light behind them.
   comp: `#define SELF
@@ -1424,8 +1454,8 @@ PRESETS.push({
     c+=pow(max(dot(reflect(d3,n),normalize(R*vec3(.4,.6,.7))),0.),50.)*1.2;
     return mix(back, c, smoothstep(.03,.0,d))*vig(p); }`,
   draw(S) {
-    const R = .62 + .06 * A.bassA;
-    D.line(260, (i, u, p) => { const w = sampleWave(mirrorU(u)), a = u * TAU + S.mt * .15, r = R + w * (.08 + .1 * A.midA); p.x = Math.cos(a) * r * 1.3; p.y = Math.sin(a) * r; palJS(A.hue + u * .4, p, 1); }, { w: .014 + .01 * A.kick, closed: true, gain: .55 });
+    const y0 = .5 * Math.sin(S.mt * .09), tilt = .5 * Math.sin(S.mt * .06 + 2.), amp = .08 + .1 * A.midA, asp = D.aspect;   // the light behind the gel: the waveform as a band that drifts and tilts
+    D.line(260, (i, u, p) => { const w = sampleWave(u), x = (u * 2 - 1) * asp * 1.1, y = y0 + w * amp; p.x = x * Math.cos(tilt) - y * Math.sin(tilt); p.y = x * Math.sin(tilt) + y * Math.cos(tilt); palJS(A.hue + u * .4, p, 1); }, { w: .014, gain: .55 });
     for (let k = 0; k < 3; k++) { const a = S.mt * (.3 + .1 * k) + k * 2.1; palJS(A.hue + .5 + k * .15, tmpC); D.sprite(Math.cos(a) * D.aspect * .6, Math.sin(a * 1.3) * .6, .12 + .08 * [A.bassA, A.midA, A.trebA][k], 0, tmpC.r, tmpC.g, tmpC.b, .10 + .12 * [A.bassA, A.midA, A.trebA][k], 0, 0, 1, 1); }
   }
 });
@@ -1433,13 +1463,14 @@ PRESETS.push({
 // ---------- 3.0 scenes: a 3D landscape, and three rebuilt from classic Milkdrop ideas ----------
 
 PRESETS.push({
-  name: 'Ridgeline', accent: '#f0abfc', fit: false, simSteps: 1,
+  name: 'Ridgeline', accent: '#f0abfc', fit: false, orbit: true, simSteps: 1,
   // The low-res buffer is a strip of terrain: each step every row slides toward us and the far edge takes
   // the spectrum as it is right now (bass in the middle). r = height, g = how hard the beat was hitting.
   sim: `vec4 sim(vec2 p){
-    vec4 s=X(p+vec2(0.,ax));
+    vec4 s=X(p+vec2(0.,ax*u0.x));                    // u0.x: how fast the land rolls toward us (the song's energy, a surge on a kick)
     if(p.y>1.-ax*1.5){
       float x=abs(p.x)/aspect, h=spec(.02+x*.8)*(.3+.7*smoothstep(1.05,.1,x));
+      h+=u0.z*exp(-pow((x-u0.y)*5.,2.));                // a kick raises a peak where the song is loudest right now
       s=vec4(mix(X(p).r,h,.5), kick, 0., 1.); }
     return s; }`,
   warp: `vec3 warp(vec2 p){ return P(p)*DK(.9); }`,
@@ -1478,6 +1509,11 @@ PRESETS.push({
     c+=pal(hue+.5+h*.4)*wire*(.25+1.3*h+1.5*s.g);                                      // rows laid down on a kick glow as they roll in
     c+=bg*.25*pow(1.-max(dot(n,-d),0.),3.);
     return mix(bg, c, exp(-tt*.30)); }`,
+  update(S, dt) {
+    S.u0[0] = Math.min(2.5, .45 + .7 * Math.min(2, A.energy) + 1.6 * A.kick);
+    let mx = 0, bi = 10; for (let i = 10; i < 420; i++) { const v = A.spec[i] * (.3 + i / 128); if (v > mx) { mx = v; bi = i; } }   // the loudest band, with the spectrum's slope taken out so it is not always the bass
+    S.u0[1] = (bi / 511 - .02) / .8; S.u0[2] = A.onKick ? .1 * Math.min(1.5, CFG.punch) : 0;
+  },
   draw() {}
 });
 
@@ -1553,6 +1589,7 @@ PRESETS.push({
   draw(S) {
     const R = .16 + .05 * A.bassA + .07 * A.kick;
     D.line(200, (i, u, p) => { const w = sampleWave(mirrorU(u)), a = u * TAU + S.mt * .3, r = R + w * (.05 + .06 * A.midA); p.x = Math.cos(a) * r; p.y = Math.sin(a) * r; palJS(A.hue + u * .3, p, 1.1); }, { w: .009, closed: true, gain: .8 });
+    D.line(200, (i, u, p) => { const w = sampleWave(u); p.x = (u * 2 - 1) * D.aspect * .9; p.y = -.72 + w * (.10 + .12 * A.midA); palJS(A.hue + u * .3, p, .9); }, { w: .007, gain: .13 });   // 3.8.2's trace along the bottom, faint: every copy has one and they add up
     if (A.onBeat) { S.bl = Math.min(1.5, CFG.punch); S.bs = 3 + Math.floor(Math.random() * 4); S.bh = A.hue + .5; }
     S.bl = (S.bl || 0) * .86;
     if (S.bl > .04) { palJS(S.bh, tmpC); D.sprite(0, 0, .30 + .25 * (1 - S.bl), S.mt * .5, tmpC.r, tmpC.g, tmpC.b, 1.2 * S.bl, S.bs, .02, .04, 0); }
@@ -2277,6 +2314,612 @@ PRESETS.push({
   }
 });
 
+// ---------- 3.8.2 scenes, part 1: the signal itself, and two made of light ----------
+// Four scenes here are built on the raw waveform and spectrum as physical things: a groove, a turned profile,
+// strings, sand on a plate. Two more are glass and tungsten.
+
+PRESETS.push({
+  name: 'Vinyl', accent: '#f5d0fe', cam: .5, pitch: .082,
+  // A record on a turntable, cut live. Each frame the stretch of groove that passed under the stylus takes the
+  // audio the analyser heard this frame, so the side of the song is written into the vinyl as it plays. The platter
+  // turns at one speed, as a record does; the stylus tracks inward one groove per turn (pitch), and when it reaches
+  // the label the arm lifts, the disc is swapped for a clean one and a new side starts. A change in the song is the
+  // gap between two tracks: a stretch of plain groove, then the next track in a new colour. A big kick skips a groove.
+  warp: `vec3 warp(vec2 p){ return P(p)*DK(.9985)*smoothstep(.97,.95,length(p))*(1.-u1.x); }`,     // the grooves hold still in the buffer; the composite turns the disc, so they stay sharp. u1.x wipes it at the start and while the arm is up
+  comp: `vec3 comp(vec2 p){
+    float r=length(p), a=atan(p.y,p.x);
+    vec3 c=vec3(.012,.010,.016)+vec3(.02,.015,.03)*fbm(p*3.);                      // the mat
+    float disc=smoothstep(.955,.945,r), lab=smoothstep(.31,.30,r), hole=smoothstep(.035,.03,r);
+    float fine=.5+.5*sin(r*640.+sin(a*3.)*.5);                                       // the pressed grooves
+    float sheen=pow(abs(cos(a-u1.z)),36.)*.5+pow(abs(cos(a-u1.z+1.4)),6.)*.1;       // the light stays put while the grooves turn under it
+    vec3 vin=vec3(.035,.03,.04)+vec3(.09,.08,.1)*fine*sheen*(1.+.6*treb);
+    vec3 cut=P(rot(-u0.x)*p); vin+=cut*(.45+sheen*.8);                   // the groove the music cut, turned to where the platter is now
+    vec3 label=pal(u1.w)*.4*(.75+.25*sin((a-u0.x)*5.+u1.w*20.))*smoothstep(.09,.12,r)+vec3(.04,.03,.03);
+    label*=.8+.2*sin(r*180.);
+    c=mix(c,vin,disc); c=mix(c,label,lab); c=mix(c,vec3(.0),hole);
+    vec2 piv=vec2(aspect*.82,.82), nd=u0.zw, d=nd-piv; float L=length(d); vec2 dn=d/L;   // the tonearm
+    vec2 rel=p-piv; float along=dot(rel,dn), perp=abs(dot(rel,vec2(-dn.y,dn.x)));
+    float arm=smoothstep(.017,.011,perp)*step(-.02,along)*step(along,L);
+    c=mix(c, vec3(.55,.55,.62)*(.55+.45*perp/.017)+vec3(.1)*sheen, arm);
+    c=mix(c, vec3(.8,.78,.85), smoothstep(.052,.044,length(p-nd+dn*.03)));
+    c=mix(c, vec3(.3,.3,.35), smoothstep(.07,.06,length(p-piv)));
+    c+=glow(p)*.5;
+    return c*vig(p); }`,
+  init(S) { S.om = 1.15; S.rn = .9; S.ra = .9; S.side = 0; S.track = 0; S.lift = 0; S.gap = 0; S.ang = 1.25; S.rot = 0; S.u1[2] = .9; S.u1[3] = Math.random(); },
+  update(S, dt) {
+    S.rot += S.om * dt; S.u0[0] = S.rot;                                                  // one speed, always: a record does not slow down for a quiet verse
+    S.u1[0] = S.t < .25 ? 1 : S.lift > 0 ? Math.min(.3, dt * 4) : 0;                       // arm up: the old side fades out, the next one starts on a clean disc
+    if (S.lift > 0) { S.lift -= dt; if (S.lift <= 0) { S.rn = .9; S.side++; S.track = 0; S.u1[3] = Math.random(); } }
+    else {
+      S.rn -= dt * this.pitch * S.om / TAU;                                                // one groove inward per turn
+      if (A.onSwing && S.gap <= 0) { S.gap = .7; S.track++; }                              // the song changes gear: the gap between two tracks
+      if (A.onKick && A.bass > 2.5 && S.sk <= 0) { S.rn -= this.pitch; S.sk = 10; }      // a big kick, now and then: the stylus skips a groove
+      if (S.rn < .33) S.lift = 2.5;                                                        // the label: lift, swap, new side
+    }
+    S.gap -= dt; S.sk = (S.sk || 0) - dt;
+    S.ra += ((S.lift > 0 ? .9 : S.rn) - S.ra) * Math.min(1, dt * 3);                     // the arm moves, it does not teleport
+    S.u0[2] = Math.cos(S.ang) * S.ra; S.u0[3] = Math.sin(S.ang) * S.ra;
+  },
+  draw(S, dt) {
+    if (S.lift > 0) return;
+    const r = S.rn, span = S.om * dt * 1.05, h = A.hue + S.side * .17 + S.track * .11, an = S.ang - S.rot, lv = .22 + .18 * Math.min(2, A.vol);   // where the stylus is, in the still buffer
+    D.line(2, (i, u, p) => { const a = an - span * (1 - u); p.x = Math.cos(a) * r; p.y = Math.sin(a) * r; palJS(h, p, .35); }, { w: .003, gain: .6, core: .3 });   // the groove itself
+    if (S.gap > 0) return;                                                                 // between tracks: plain groove, nothing in it
+    // The music in the groove is drawn the way a track's waveform is shown on a player: bars standing across the
+    // groove, each as tall as that slice of the frame's audio is loud, close enough to read as one band, and never
+    // taller than the gap to the next turn, so the record fills with the song's shape and the turns stay apart.
+    const bars = 4, blk = 512 / bars | 0, cap = this.pitch * .42;
+    for (let j = 0; j < bars; j++) {
+      let e = 0; for (let k = 0; k < blk; k++) { const v = A.wave[j * blk + k]; e += v * v; }
+      e = Math.min(1, Math.sqrt(e / blk) * 2.2);
+      const a = an - span * (1 - (j + .5) / bars), hh = .004 + (cap - .004) * e, ca = Math.cos(a), sa = Math.sin(a);
+      palJS(h + e * .25, tmpC);
+      D.line(2, (i, u, p) => { const rr = r + (u * 2 - 1) * hh; p.x = ca * rr; p.y = sa * rr; p.r = tmpC.r; p.g = tmpC.g; p.b = tmpC.b; }, { w: .0034, gain: lv * (.6 + 1.4 * e), core: .6 });
+    }
+    if (A.onKick) { palJS(h + .5, tmpC); D.line(2, (i, u, p) => { const rr = r - u * .06; p.x = Math.cos(an) * rr; p.y = Math.sin(an) * rr; p.r = tmpC.r; p.g = tmpC.g; p.b = tmpC.b; }, { w: .004, gain: .6 * CFG.punch }); }   // the kick scratches across the grooves
+  }
+});
+
+PRESETS.push({
+  name: 'Lathe', accent: '#fbbf24', fit: false,
+  // A vase being turned on a lathe. Its profile is the waveform: a cutting tool travels up and down the piece and
+  // reshapes each row it passes to the sound right now, so the vase is always being re-cut; a kick re-cuts the
+  // whole piece at once. The wood spins faster with the mids, chips fly from the tool, and the bench reflects it.
+  sim: `vec4 sim(vec2 p){
+    float y=p.y*.5+.5;
+    vec4 s=X(vec2(0.,p.y));
+    float sm=(X(vec2(0.,p.y+ax)).r+X(vec2(0.,p.y-ax)).r)*.5;
+    float w=wav(fract(y*u1.x+u1.y));
+    float base=.22+.1*sin(y*5.3+seed.x*9.)+.08*sin(y*11.+seed.y*7.)+.06*smoothstep(.0,.3,y)*smoothstep(1.,.8,y);
+    float want=base+w*u0.y+spec(y*.8)*.07;
+    float cut=smoothstep(u0.z,0.,abs(y-u0.x))*u0.w;                // the tool reshapes the rows it is touching
+    float r=mix(s.r, want, max(cut, u1.z));                          // u1.z: a kick re-cuts everything
+    r=mix(r, sm, .12);
+    r=mix(r, want, u1.w);
+    return vec4(clamp(r,.03,.6), 0., 0., 1.); }`,
+  simSteps: 2,
+  warp: `vec3 warp(vec2 p){ vec2 q=p+vec2(0.,-.004)*spd; return mix(P(q),B(q),.2)*DK(.86); }`,
+  comp: `vec3 comp(vec2 p){
+    vec3 bg=mix(vec3(.018,.013,.010), vec3(.07,.045,.03), smoothstep(-1.,1.,p.y))*(.8+.3*fbm(p*2.+vec2(mt*.02,0.)));
+    float ylim=.84; vec2 pp=p; float refl=0.;
+    if(p.y<-ylim){ pp.y=-2.*ylim-p.y; refl=1.; }                     // the bench top mirrors the piece
+    float prof=X(vec2(0.,pp.y)).r*1.15, dprof=(X(vec2(0.,pp.y+.02)).r-X(vec2(0.,pp.y-.02)).r)*1.15/.04;
+    float x=pp.x, inside=step(abs(x),prof)*step(abs(pp.y),ylim);
+    float nx=clamp(x/max(prof,1e-3),-1.,1.), nz=sqrt(max(0.,1.-nx*nx));
+    vec3 n=normalize(vec3(nx, -dprof*nz, nz));
+    float u=atan(nx,nz)/PI+u2.x;                                      // around the spinning surface
+    float grain=.55+.45*sin(pp.y*38.+5.*noise(vec2(u*6.,pp.y*2.5)+seed.xy*9.));
+    vec3 wood=mix(vec3(.5,.26,.09), vec3(.85,.58,.3), grain)*(.8+.2*sin(u*40.+pp.y*25.));
+    wood=mix(wood, wood*pal(hue+pp.y*.2)*1.6, .25);
+    vec3 L1=normalize(vec3(.5,.6,.7)), L2=normalize(vec3(-.6,.2,.6));
+    float dif=max(dot(n,L1),0.)*.9+max(dot(n,L2),0.)*.4*(.6+.5*bassA)+.07;
+    float spc=pow(max(dot(reflect(-L1,n),vec3(0.,0.,1.)),0.),28.)*.55;
+    vec3 v=wood*dif+vec3(spc)*(.7+.6*trebA);
+    v*=1.-.55*smoothstep(ylim-.12,ylim,abs(pp.y));
+    float tool=smoothstep(.035,0.,abs(pp.y-u0.x))*step(abs(x),prof+.03)*u0.w;
+    v+=vec3(1.,.55,.2)*tool*(1.2+2.*kick);                            // the cut glows hot
+    vec3 c=mix(bg, v*(1.-refl*.55), inside);
+    if(refl>.5 && inside<.5) c*=.8;
+    c+=P(p)*1.3+glow(p)*.9;                                           // chips and sparks
+    return c*vig(p); }`,
+  init(S) { S.ty = 0; S.dir = 1; S.spin = 0; S.snap = 0; S.chips = []; S.u1[0] = 1; S.u1[3] = 1; S.first = 0; },
+  update(S, dt) {
+    S.first += dt; S.u1[3] = S.first < .3 ? 1 : 0;
+    const sp = (.22 + .25 * Math.min(2, A.energy)) * (1 + .5 * A.trebA);
+    S.ty += S.dir * sp * dt; if (S.ty > .95) { S.ty = .95; S.dir = -1; } if (S.ty < .05) { S.ty = .05; S.dir = 1; }
+    if (A.onKick) S.snap = Math.min(1.5, CFG.punch) * 1.5;
+    S.snap *= Math.max(0, 1 - dt * 5);
+    S.spin += dt * (1.5 + 2.5 * Math.min(2, A.midA) + 3 * A.kick);
+    S.u0[0] = S.ty; S.u0[1] = .06 + .07 * Math.min(2.5, A.bassA); S.u0[2] = .09; S.u0[3] = 1;
+    S.u1[1] = S.t * .13; S.u1[2] = Math.min(1, S.snap);
+    S.u2[0] = S.spin;
+  },
+  draw(S, dt) {
+    const y = S.ty * 2 - 1, n = Math.floor(1 + 3 * Math.min(2, A.trebA) + 12 * A.kick);
+    for (let i = 0; i < n && S.chips.length < 160; i++) { const s = Math.random() < .5 ? -1 : 1; S.chips.push({ x: s * (.3 + .25 * Math.random()), y, vx: s * rnd(.4, 1.4), vy: rnd(.3, 1.3), life: rnd(.4, .9), h: Math.random() }); }
+    const keep = [];
+    for (const c of S.chips) { c.x += c.vx * dt; c.y += c.vy * dt; c.vy -= 2.5 * dt; c.life -= dt; if (c.life > 0) { palJS(A.hue + .05 + c.h * .1, tmpC); D.sprite(c.x, c.y, .006 + .004 * c.h, 0, 1, .7, .35, 1.5 * c.life, 0, 0, .5, 1); keep.push(c); } }
+    S.chips = keep;
+  }
+});
+
+PRESETS.push({
+  name: 'Harp', accent: '#a5b4fc', orbit: true,
+  // Strings, each one a real vibrating string: the waveform drives one end, the wave runs up the string and back
+  // at its own speed, so every string answers the music in its own way. Each string listens to its own slice of
+  // the spectrum, a kick plucks them all in the middle, and a swing restrings the harp with a new count and fan.
+  warp: `vec3 warp(vec2 p){ vec2 q=p+vec2(0.,-.0025)*spd; return mix(P(q),B(q),.12)*DK(.87); }`,
+  comp: `vec3 comp(vec2 p){
+    vec3 c=vec3(.012,.01,.02)+pal(hue+.5)*.05*(1.-smoothstep(.2,1.2,length(p*vec2(.7,1.))))*(.6+.4*bassA);
+    c+=pal(hue+.2)*.03*fbm(p*2.+vec2(0.,-mt*.05));
+    c+=P(p)*1.25+glow(p)*.9;
+    return c*vig(p); }`,
+  init(S) { S.N = 40; S.str = []; this.restring(S); S.pluck = 0; },
+  restring(S) {
+    const n = Math.round(rnd(9, 19)), asp = D.aspect, N = S.N, tilt = rnd(-.25, .25), fan = rnd(.2, .5);
+    S.str = [];
+    for (let k = 0; k < n; k++) {
+      const u = n > 1 ? k / (n - 1) : .5, x0 = (u * 2 - 1) * asp * .78 - tilt * .3, y0 = -.9, x1 = (u * 2 - 1) * asp * .78 + tilt, y1 = .92 - fan * (1 - u) * (1 - u) * 2.2;
+      S.str.push({ x0, y0, x1, y1, u: new Float32Array(N), v: new Float32Array(N), c: 14 + 28 * (1 - u), damp: .994 - .004 * u, band: .04 + u * .62, h: u });
+    }
+  },
+  update(S, dt) {
+    if (A.onSwing) this.restring(S);
+    const sub = 2, h = Math.min(dt, 1 / 30) / sub, N = S.N, kickV = A.onKick ? 4 * Math.min(1.5, CFG.punch) : 0;
+    for (const s of S.str) {
+      const lv = sampleSpec(s.band), amp = .008 + .045 * Math.min(1.5, lv) * (.6 + .4 * Math.min(2, A.energy));
+      if (kickV) for (let i = N * .35 | 0; i < N * .65; i++) s.v[i] += kickV * Math.sin((i - N * .35) / (N * .3) * Math.PI);
+      for (let k = 0; k < sub; k++) {
+        s.u[0] = sampleWave(s.band * .5 + (S.t * 2.3) % .4) * amp; s.u[N - 1] = 0;
+        const c2 = s.c * s.c;
+        for (let i = 1; i < N - 1; i++) s.v[i] = (s.v[i] + c2 * (s.u[i - 1] + s.u[i + 1] - 2 * s.u[i]) * h) * s.damp;
+        for (let i = 1; i < N - 1; i++) { s.u[i] += s.v[i] * h; if (s.u[i] > .22 || s.u[i] < -.22) { s.u[i] *= .9; s.v[i] *= .5; } }
+      }
+    }
+  },
+  draw(S) {
+    const N = S.N;
+    for (const s of S.str) {
+      const lv = sampleSpec(s.band), dx = s.x1 - s.x0, dy = s.y1 - s.y0, l = Math.hypot(dx, dy) || 1, nx = -dy / l, ny = dx / l, g = .35 + .9 * Math.min(1.5, lv) + .6 * A.kick;
+      D.line(N, (i, u, p) => { const d = s.u[i]; p.x = s.x0 + dx * u + nx * d; p.y = s.y0 + dy * u + ny * d; palJS(A.hue + s.h * .45, p, 1); }, { w: .0035 + .004 * Math.min(1, lv) + .004 * A.kick, gain: g + 1.5 * A.kick, core: .9 });
+    }
+    const f = S.str[0], l = S.str[S.str.length - 1];
+    D.line(2, (i, u, p) => { p.x = f.x0 + (l.x0 - f.x0) * u; p.y = f.y0; palJS(A.hue + .6, p, .6); }, { w: .012, gain: .4 + .5 * A.bassA, core: .3 });   // the soundboard beam
+    D.line(24, (i, u, p) => { const k = u * (S.str.length - 1), a = S.str[Math.floor(k)], b = S.str[Math.min(S.str.length - 1, Math.ceil(k))], t = k - Math.floor(k); p.x = a.x1 + (b.x1 - a.x1) * t; p.y = a.y1 + (b.y1 - a.y1) * t; palJS(A.hue + .6, p, .6); }, { w: .009, gain: .35 + .4 * A.trebA, core: .3 });
+  }
+});
+
+PRESETS.push({
+  name: 'Cymatics', accent: '#fde68a', cam: .4,
+  // Sand on a steel plate that the music vibrates: the grains are shaken off the moving parts and gather on the
+  // still lines between them, the way a Chladni plate draws its figures. Which figure depends on the pitch that
+  // dominates the spectrum, so the pattern re-forms as the song moves; a kick strikes the plate and the sand jumps.
+  agents: { n: 65536,
+    update: `float plate(vec2 q, float m, float n){ return cos(n*PI*q.x)*cos(m*PI*q.y)-cos(m*PI*q.x)*cos(n*PI*q.y); }
+      float amp(vec2 p){ vec2 q=p/vec2(aspect,1.); return abs(mix(plate(q,u0.x,u0.y), plate(q,u1.x,u1.y), u1.z)); }
+      vec4 agent(vec4 s, vec2 id){
+        vec2 p=s.xy;
+        float a=amp(p); vec2 e=vec2(.012,0.);
+        vec2 g=vec2(amp(p+e.xy)-amp(p-e.xy), amp(p+e.yx)-amp(p-e.yx))/.024;
+        float r1=hash(id*vec2(53.1,91.7)+fract(t*.73)*vec2(7.,3.)), r2=hash(id*vec2(17.9,41.3)+fract(t*.37)*vec2(5.,11.));
+        vec2 jump=dir(r1*TAU)*sqrt(r2);
+        float shake=u0.z*a*a+u0.w*(.3+.7*r2);                                        // the plate throws sand where it moves, and when struck
+        p+=jump*shake*dt*1.6-g*a*u0.z*dt*.12;
+        p=clamp(p, -vec2(aspect,1.)*.97, vec2(aspect,1.)*.97);
+        return vec4(p,s.z,s.w); }`,
+    deposit: `void place(vec4 s, out vec2 p, out vec3 col, out float size){ p=s.xy; col=vec3(.05); size=2.; }`,
+    draw: `void place(vec4 s, out vec2 p, out vec3 col, out float size){ p=s.xy; col=vec3(1.,.93,.8)*(.45+.55*s.w); size=1.2+1.2*s.w; }` },
+  sim: `vec4 sim(vec2 p){ return X(p)*.82; }`, simSteps: 1,
+  warp: `vec3 warp(vec2 p){ return P(p)*DK(.5); }`,
+  comp: `float plate(vec2 q, float m, float n){ return cos(n*PI*q.x)*cos(m*PI*q.y)-cos(m*PI*q.x)*cos(n*PI*q.y); }
+  vec3 comp(vec2 p){
+    vec2 q=p/vec2(aspect,1.);
+    float a=abs(mix(plate(q,u0.x,u0.y), plate(q,u1.x,u1.y), u1.z));
+    vec3 c=vec3(.045,.048,.055)*(.75+.35*fbm(p*4.+seed.xy*7.))*(.85+.3*smoothstep(1.,.0,length(p)));
+    c+=pal(hue+.55)*a*a*.1*(.5+.8*trebA)+pal(hue+.55)*.06*u0.w;                       // the moving parts of the plate shimmer
+    c+=P(p)*1.1+X(p).r*vec3(.55,.5,.42)*1.4+glow(p)*.5;                               // the sand, with its piles
+    vec2 e=abs(p)/vec2(aspect,1.); c*=1.-.6*smoothstep(.96,1.,max(e.x,e.y));
+    return c*vig(p); }`,
+  init(S) { S.m = 3; S.n = 2; S.m2 = 4; S.n2 = 1; S.bl = 1; S.mark = -1; S.hold = 0; S.lastBin = 0; S.strike = 0; },
+  update(S, dt) {
+    // the dominant pitch picks the figure: a new one on a real change that holds, or every eighth beat
+    let mx = 0, bin = 0; for (let i = 8; i < 300; i += 2) if (A.spec[i] > mx) { mx = A.spec[i]; bin = i; }
+    S.hold = Math.abs(bin - S.lastBin) > 25 ? S.hold + dt : 0; if (S.hold > .35) S.lastBin = bin;
+    const want = (S.hold > .35 && S.bl >= 1) || (A.onBeat && A.beats % 8 === 0 && A.beats !== S.mark && S.bl >= 1);
+    if (want) { S.mark = A.beats; S.hold = 0; S.m = S.m2; S.n = S.n2; const m = 1 + Math.floor(bin / 300 * 6.99), n = 1 + Math.floor((bin * 7 + A.beats * 3) % 7); S.m2 = m; S.n2 = n === m ? (n % 7) + 1 : n; S.bl = 0; }
+    S.bl = Math.min(1, S.bl + dt * .8);
+    if (A.onKick) S.strike = Math.min(1.5, CFG.punch) * (.6 + .4 * Math.min(2, A.bass));
+    S.strike *= Math.max(0, 1 - dt * 9);
+    S.u0[0] = S.m; S.u0[1] = S.n; S.u0[2] = .7 + 1.1 * Math.min(2, A.energy) * (.5 + .5 * A.vol); S.u0[3] = S.strike;
+    S.u1[0] = S.m2; S.u1[1] = S.n2; S.u1[2] = S.bl * S.bl * (3 - 2 * S.bl);
+  },
+  draw() {}
+});
+
+const SHARD_LIB = `
+vec2 h2(vec2 p){ return vec2(hash(p), hash(p+19.7)); }
+// Voronoi shards: returns (distance to the nearest edge, cell id) and the cell's centre.
+vec2 shard(vec2 p, float sc, float sd, out vec2 cen){
+  vec2 g=floor(p*sc), f=fract(p*sc); float d1=8., d2=8.; vec2 best=vec2(0.); float id=0.;
+  for(int j=-1;j<=1;j++) for(int i=-1;i<=1;i++){ vec2 o=vec2(float(i),float(j)); vec2 h=h2(g+o+sd); vec2 r=o+h-f; float d=dot(r,r);
+    if(d<d1){ d2=d1; d1=d; best=g+o+h; id=hash(g+o+sd*3.1); } else if(d<d2) d2=d; }
+  cen=best/sc; return vec2((sqrt(d2)-sqrt(d1))/sc, id); }
+`;
+PRESETS.push({
+  name: 'Shatter', accent: '#bae6fd', cam: .7,
+  // A pane of coloured glass that the music paints and a kick smashes: the picture breaks into shards that each
+  // fly their own way from the point of impact and spin as they go, cracks glowing along the breaks. The louder
+  // the kick, the more pieces. Between kicks the glass is repainted by the spectrum, ready to break again.
+  warp: SHARD_LIB + `vec3 warp(vec2 p){
+    vec2 cen; vec2 sh=shard(p, u0.z, u0.w, cen);
+    vec2 away=cen-u1.xy; float L=length(away)+1e-3;
+    vec2 vel=away/L*(.6+.9*hash(vec2(sh.y,sh.y*7.)))*u1.z+vec2(0.,-.3*u1.z*smoothstep(0.,1.,u1.w));   // out from the impact, then falling
+    float spin=(hash(vec2(sh.y*3.,1.))-.5)*2.5*u1.z;
+    vec2 q=cen+rot(-spin*dt)*(p-cen)-vel*dt;
+    q=mix(p,q,spd);
+    vec3 c=P(q)*DK(.985);
+    c*=1.-smoothstep(.02,.0,sh.x)*u1.z*.9;                                           // the gaps between pieces
+    return c; }`,
+  comp: SHARD_LIB + `vec3 comp(vec2 p){
+    vec2 cen; vec2 sh=shard(p, u0.z, u0.w, cen);
+    vec3 c=P(p);
+    float crack=smoothstep(.018,.0,sh.x)*u1.z;
+    c=mix(c, ca(p,.006*u1.z), smoothstep(.0,.08,sh.x)*u1.z);                          // the edges of a shard split the light
+    c+=pal(hue+.3)*crack*(1.5+2.*kick)+vec3(1.)*crack*.4;
+    c+=glow(p)*.7+vec3(.01,.012,.02);
+    float back=1.-smoothstep(.3,.0,lum(c));
+    return c*vig(p); }`,
+  init(S) { S.sd = Math.random() * 40; S.sc = 3; S.fly = 0; S.age = 9; S.ix = 0; S.iy = 0; S.pts = []; for (let i = 0; i < 40; i++) S.pts.push(Math.random()); },
+  update(S, dt) {
+    if (A.onKick) { const k = Math.min(2, A.bass); S.sd = Math.random() * 40; S.sc = 2 + 2.5 * k * Math.min(1.5, CFG.punch); S.fly = 1; S.age = 0; S.ix = rnd(-.6, .6) * D.aspect; S.iy = rnd(-.6, .6); S.la = rnd(0, TAU); S.ly = rnd(-.5, .5); }
+    S.age += dt; S.fly *= Math.max(0, 1 - dt * 1.6);
+    S.u0[2] = S.sc; S.u0[3] = S.sd; S.u1[0] = S.ix; S.u1[1] = S.iy; S.u1[2] = S.fly; S.u1[3] = S.age;
+  },
+  draw(S) {
+    const asp = D.aspect, n = 40, lv = .25 + .5 * Math.min(2, A.energy);
+    for (let i = 0; i < n; i++) {                                                     // the painting: stained light, each pane a slice of the spectrum
+      const u = i / n, s = sampleSpec(u * .9), a = u * TAU + S.mt * .08, r = .28 + .55 * s * s;
+      palJS(A.hue + u * .9 + S.pts[i] * .1, tmpC); D.sprite(Math.cos(a) * r * asp * .9, Math.sin(a) * r, .07 + .13 * s, a, tmpC.r, tmpC.g, tmpC.b, lv * (.3 + s), 0, 0, .9, 0);
+    }
+    const c = Math.cos(S.la || 0), s = Math.sin(S.la || 0), ly = S.ly || 0;   // the lead line across the pane, with the waveform in it; a new chord with every break
+    D.line(240, (i, u, p) => { const w = sampleWave(u), x = (u * 2 - 1) * asp * 1.1, y = ly + w * (.1 + .12 * A.bassA); p.x = c * x - s * y; p.y = s * x + c * y; palJS(A.hue + .5 + u * .2, p, 1); }, { w: .006, gain: .5, core: .8 });
+    if (A.onKick) D.sprite(S.ix, S.iy, .3 + .3 * A.bass, 0, 1, 1, 1, 1.2 * CFG.punch, 0, 0, 1, 1);
+  }
+});
+
+PRESETS.push({
+  name: 'Tungsten', accent: '#fdba74', fit: false, cam: .8, orbit: true,
+  // One big old light bulb, in a dark room, seen from a camera that drifts around it. The filament is the waveform
+  // itself, strung between the posts and glowing hotter the louder the song: dull orange at a whisper, white at a
+  // shout. Heat rises off it inside the glass. A swing burns the filament out for a moment, and it comes back strung
+  // in a new shape. The bulb is real glass, marched ray by ray: the 2D picture is the light inside it, the screw base
+  // and the table below take its light, and the glass reflects the room.
+  warp: `vec3 warp(vec2 p){ vec2 q=p+vec2(.0015*sin(p.y*20.+t*3.),-.0045)*spd; return mix(P(q),B(q),.3)*DK(.80); }`,
+  comp: `#define SELF
+  float smin(float a, float b, float k){ float h=clamp(.5+.5*(b-a)/k,0.,1.); return mix(b,a,h)-k*h*(1.-h); }
+  float sdBulb(vec3 q){                                                                  // the glass: a globe with a neck, the same shape the flat view had
+    float body=length((q-vec3(0.,.14,0.))/vec3(1.,1.02,1.))-.6;
+    float neck=max(length(q.xz)-.2-.05*smoothstep(-.3,-.6,q.y), max(q.y+.2, -.78-q.y));
+    return smin(neck, body, .18); }
+  float sdBase(vec3 q){ return max(length(q.xz)-.215-.012*sin(q.y*90.), abs(q.y+.88)-.10); }   // the screw cap, threads and all
+  vec2 map(vec3 q){ float b=sdBulb(q), c=sdBase(q); return b<c ? vec2(b,0.) : vec2(c,1.); }
+  vec3 nrm(vec3 q){ vec2 e=vec2(.004,-.004); return normalize(e.xyy*map(q+e.xyy).x+e.yyx*map(q+e.yyx).x+e.yxy*map(q+e.yxy).x+e.xxx*map(q+e.xxx).x); }
+  vec3 room(vec3 r){ return vec3(.016,.011,.008)+vec3(.05,.035,.025)*smoothstep(.2,-.8,r.y)+vec3(.02,.025,.04)*smoothstep(.3,1.,r.y); }   // a dark room: a little warmth low down, a little cool above
+  vec3 comp(vec2 p){
+    float cy=cos(cam.x*1.8), sy=sin(cam.x*1.8), cp=cos(cam.y*1.3), sn=sin(cam.y*1.3);
+    mat3 R=mat3(cy,0.,-sy, 0.,1.,0., sy,0.,cy)*mat3(1.,0.,0., 0.,cp,sn, 0.,-sn,cp);
+    vec3 o3=R*vec3(0.,0.,2.6*cam.w), d3=R*normalize(vec3(rot(cam.z)*sp,-FOC));
+    vec3 right=R*vec3(1.,0.,0.), up=R*vec3(0.,1.,0.), fwd=R*vec3(0.,0.,1.);
+    vec3 light=mix(vec3(1.,.45,.1), vec3(1.,.9,.75), u0.x)*u0.x;                       // the filament's colour and how hard it burns
+    vec3 L=vec3(0.,-.05,0.);                                                            // where the light comes from: the middle of the filament
+    float dmin=length(cross(d3, vec3(0.,.1,0.)-o3));                                     // how close this ray passes the bulb: the haze of light in the room
+    vec3 halo=light*.25/(1.+5.*dmin*dmin)*(1.+.4*kick);
+    vec3 rm=room(d3);
+    // what the ray meets: the bulb or its base (marched), else the table, else the room
+    float bq=dot(o3,d3), disc=bq*bq-dot(o3,o3)+1.25*1.25, tt=0., d=1.; vec2 m=vec2(1.,0.);
+    bool hit=false;
+    if(disc>0.){ tt=max(-bq-sqrt(disc),0.);
+      for(int i=0;i<48;i++){ m=map(o3+d3*tt); if(m.x<.003){ hit=true; break; } if(tt>5.) break; tt+=m.x*.9; } }
+    vec3 c;
+    if(hit){
+      vec3 q=o3+d3*tt, n=nrm(q);
+      float ndv=max(dot(n,-d3),0.), fres=pow(1.-ndv,3.);
+      if(m.y<.5){                                                                      // glass
+        vec3 rr=refract(d3,n,1./1.4);                                                    // the glass bends the view of what is inside
+        float tp=-dot(q,fwd)/min(dot(rr,fwd),-1e-3); vec3 X=q+rr*tp;
+        vec2 uv=vec2(dot(X,right), dot(X,up));                                           // the flat picture stands inside the bulb, facing us
+        vec3 inner=P(uv)*.7+B(uv)*.55+glow(uv)*.6;
+        float chord=2.*sqrt(max(0.,.6*.6-dot(q-vec3(0.,.14,0.),q-vec3(0.,.14,0.))*(1.-ndv*ndv)));   // path through the globe: the hot air glows along it
+        inner+=light*.07*(1.+.4*chord)+B(uv)*.2*chord;
+        vec3 refl=room(reflect(d3,n))*(.25+.75*fres)*2.;                                 // the room in the glass
+        refl+=pow(max(dot(reflect(d3,n),normalize(R*vec3(-.5,.6,.7))),0.),60.)*.9;      // the window
+        c=inner*(1.-.5*fres)+refl+light*.12*fres;                                        // the rim takes the filament's light
+      } else {                                                                           // the screw base: metal, lit from above by the filament
+        vec3 tl=L-q; float dl=length(tl); tl/=dl;
+        float dif=max(dot(n,tl),0.)/(1.+3.*dl*dl), spc=pow(max(dot(reflect(-tl,n),-d3),0.),18.);
+        vec3 metal=vec3(.55,.5,.44)*(.6+.4*sin(q.y*90.));
+        c=metal*(light*dif*1.4+vec3(.03,.025,.02))+light*spc*.5+room(reflect(d3,n))*.3;
+      }
+    } else if(d3.y<-.02){                                                                // the table
+      float ty=(-1.05-o3.y)/d3.y; vec3 X=o3+d3*ty;
+      vec3 tl=L-X; float dl=length(tl); tl/=dl;
+      float dif=max(tl.y,0.)/(1.+2.5*dl*dl)*smoothstep(.12,.5,length(X.xz));             // the base stands in its own light: a shadow straight below
+      vec3 wood=vec3(.07,.045,.03)*(.7+.5*fbm(X.xz*3.+seed.xy*9.))*(.9+.2*sin(X.x*40.));
+      c=wood*(light*dif*7.+vec3(.05,.04,.03))+halo*.6;
+      c+=light*pow(max(dot(reflect(-tl,vec3(0.,1.,0.)),-d3),0.),40.)*.25/(1.+2.*dl*dl);   // the varnish catches the bulb
+      c=mix(rm, c, exp(-ty*.08));
+    } else c=rm+halo;
+    return c*vig(p); }`,
+  init(S) { S.lv = .3; S.shape = Math.floor(Math.random() * 4); S.dead = 0; S.flick = 1; },
+  update(S, dt) {
+    const want = Math.min(1, .2 + .5 * Math.min(1.5, A.vol) + .4 * A.kick + .2 * Math.min(1, A.level));
+    S.lv += (want - S.lv) * Math.min(1, dt * (want > S.lv ? 25 : 6));
+    if (A.onSwing && S.dead <= 0) S.dead = 1.4;
+    if (S.dead > 0) { S.dead -= dt; if (S.dead <= 0) S.shape = (S.shape + 1 + Math.floor(Math.random() * 3)) % 4; }
+    S.flick = .94 + .06 * Math.sin(S.t * 97) * Math.sin(S.t * 31);
+    S.u0[0] = S.dead > 0 ? Math.max(0, .15 - S.dead * .1) : S.lv * S.flick;
+  },
+  draw(S) {
+    const lv = S.u0[0], amp = .035 + .1 * Math.min(2.5, A.bassA) + .06 * A.kick, N = 300, sh = S.shape, r = 1, g = .35 + .55 * lv, b = .05 + .6 * lv * lv;
+    D.line(2, (i, u, p) => { p.x = -.12; p.y = -.75 + u * .45; p.r = .4; p.g = .38; p.b = .36; }, { w: .006, gain: .5, core: .5 });   // the posts
+    D.line(2, (i, u, p) => { p.x = .12; p.y = -.75 + u * .45; p.r = .4; p.g = .38; p.b = .36; }, { w: .006, gain: .5, core: .5 });
+    if (S.dead > 1.1) return;                                                          // burnt out: nothing between the posts
+    D.line(N, (i, u, p) => {
+      const w = sampleWave(u);
+      let x, y, nx, ny;
+      if (sh === 0) { const k = u * 4, seg = Math.floor(k), f = k - seg; x = -.12 + .06 * seg; y = -.3 + (seg % 2 ? 1 - f : f) * .5 + (seg === 0 ? 0 : 0); if (seg >= 4) { x = .12; y = -.3; } nx = 1; ny = 0; }             // a W
+      else if (sh === 1) { const a = u * TAU * 5; x = -.12 + u * .24; y = .05 + Math.sin(a) * .08; nx = 0; ny = 1; }                       // a coil
+      else if (sh === 2) { const a = -Math.PI * .5 + u * TAU; x = Math.cos(a) * .12; y = .05 + Math.sin(a) * .3 - .3 * (1 - Math.abs(2 * u - 1)) * 0; nx = Math.cos(a); ny = Math.sin(a); if (u < .02 || u > .98) { x = (u < .5 ? -1 : 1) * .12; y = -.3; } }   // a loop
+      else { const k = u * 3, seg = Math.floor(k), f = k - seg; x = -.12 + .08 * seg; y = -.3 + (seg % 2 ? f : 1 - f) * .5 * (seg === 0 ? f * 2 : 1); if (seg >= 3) { x = .12; y = -.3; } nx = 1; ny = 0; }   // an M
+      p.x = x + nx * w * amp; p.y = y + ny * w * amp; p.r = r; p.g = g; p.b = b;
+    }, { w: .006 + .003 * lv, gain: .25 + .75 * lv, core: 1 });
+  }
+});
+
+// ---------- 3.8.2 scenes, part 2: three living things, and rain ----------
+
+PRESETS.push({
+  name: 'Fireflies', accent: '#d9f99d', panorama: true, cam: .5,
+  // A meadow at night full of fireflies, each flashing on its own clock. A flash seen nearby nudges a firefly's clock,
+  // and so does every kick, so over a minute they fall into step with the beat, and with each other, in waves that
+  // sweep across the field. A swing scrambles every clock and the whole slow synchronisation starts again.
+  agents: { n: 6144,
+    update: `vec4 agent(vec4 s, vec2 id){
+      vec2 p=s.xy; float ph=s.z, k=s.w;
+      float r1=hash(id*vec2(31.7,71.3)+fract(t*.53)*vec2(3.,9.)), r2=hash(id*vec2(13.1,47.9)+fract(t*.29)*vec2(5.,7.));
+      float h=k*TAU+t*(.3+.4*k)+sin(t*.6+k*20.)*1.6;                                   // a lazy wander
+      p+=dir(h)*(.025+.05*k)*(.6+.5*midA)*dt+(vec2(r1,r2)-.5)*.015*dt*60.*.06;
+      if(abs(p.x)>aspect*1.05) p.x=-sign(p.x)*aspect*1.04;
+      if(p.y>.88) p.y=-.84; if(p.y<-.86) p.y=.86;
+      float seen=X(p).r;                                                                // light from the others nearby
+      float pull=(u0.x*u0.y+seen*u0.z)*dt;
+      ph+=u0.w*dt*(.92+.16*k)-pull*sin(TAU*ph)*.5;                                      // the nudge pulls the clock toward the flash it saw
+      if(u1.x>.5) ph=r1;                                                                // a swing: every clock scrambled
+      ph=fract(ph);
+      return vec4(p,ph,k); }`,
+    deposit: `void place(vec4 s, out vec2 p, out vec3 col, out float size){ p=s.xy; float f=exp(-s.z*22.)*smoothstep(.5,.4,s.z); col=vec3(f*.5); size=14.; }`,
+    draw: `void place(vec4 s, out vec2 p, out vec3 col, out float size){ p=s.xy; float f=exp(-s.z*22.)*smoothstep(.5,.4,s.z); col=mix(vec3(.02,.03,.01), vec3(.85,1.,.35)*(2.+1.*s.w), f); size=1.5+9.*f*(1.+.5*s.w); }` },
+  sim: `vec4 sim(vec2 p){ vec2 e=vec2(ax*2.,0.); vec4 f=X(p)*.2+(X(p+e.xy)+X(p-e.xy)+X(p+e.yx)+X(p-e.yx))*.2; return f*.7; }`, simSteps: 1,
+  warp: `vec3 warp(vec2 p){ return mix(P(p),B(p),.1)*DK(.84); }`,
+  comp: `vec3 comp(vec2 p){
+    float y=p.y;
+    vec3 sky=mix(vec3(.012,.018,.05), vec3(.0,.002,.01), smoothstep(-.3,.9,y));
+    sky+=pal(hue+.6)*.04*smoothstep(.2,-.6,y);
+    vec2 sc=p*vec2(1.,1.3)*40.; float st=hash(floor(sc)+seed.xy);                        // stars
+    sky+=vec3(.7,.8,1.)*step(.985,st)*smoothstep(.4,0.,length(fract(sc)-.5))*(.4+.6*sin(t*2.+st*50.))*smoothstep(-.2,.3,y)*(.6+.4*trebA);
+    float md=length((p-vec2(aspect*.55,.62))*vec2(1.,1.)); sky+=vec3(1.,.95,.8)*(smoothstep(.09,.085,md)*.9+exp(-md*4.)*.12);   // the moon
+    float gy=-.85+.12*fbm(vec2(p.x*2.5+seed.x*9.,0.))+.05*noise(vec2(p.x*30.,0.));
+    float grass=smoothstep(.0,.015,gy-y);
+    vec3 ground=vec3(.004,.012,.004)+B(p)*vec3(.3,.5,.2)*1.2;                             // the grass takes the light of the flashes
+    vec3 c=mix(sky, ground, grass);
+    c+=P(p)*1.3+glow(p)*1.1;
+    return c*vig(p); }`,
+  init(S) { S.per = .5; S.lastK = 0; S.scr = 0; },
+  update(S, dt) {
+    S.lastK += dt;
+    if (A.onKick) { if (S.lastK > .2 && S.lastK < 2) S.per += (S.lastK - S.per) * .3; S.lastK = 0; }
+    S.scr = A.onSwing ? 1 : 0;
+    S.u0[0] = A.kick; S.u0[1] = 2.2 * Math.min(1.5, CFG.punch); S.u0[2] = 3.5; S.u0[3] = 1 / Math.max(.25, S.per);
+    S.u1[0] = S.scr;
+  },
+  draw(S) { if (A.onKick) D.sprite(0, -.2, 2 * D.aspect, 0, .6, .9, .3, .05 * CFG.punch, 0, 0, 1, 0); }   // the beat itself: a faint flash over the whole field
+});
+
+PRESETS.push({
+  name: 'Coral', accent: '#fb7185', cam: .5,
+  // A coral head growing by accretion: thousands of specks drift in the water, and wherever one touches the reef it
+  // sticks and becomes part of it, new growth pale at the rim, older growth coloured and shaded inside. The song's energy sets how fast
+  // it grows, new growth is pale and ages into colour, a kick lights the whole reef, and every so often a patch
+  // crumbles away (a swing, or just time) so something new can grow in its place.
+  agents: { n: 16384,
+    update: `vec4 agent(vec4 s, vec2 id){
+      vec2 p=s.xy; float h=s.z, w=s.w;
+      float r1=hash(id*vec2(43.1,19.7)+fract(t*.61)*vec2(7.,5.)), r2=hash(id*vec2(71.9,23.3)+fract(t*.43)*vec2(3.,11.));
+      if(w>.5 || length(p-u2.xy)>u0.x*1.7){                                              // stuck last frame, or wandered off: come back in from the edge of the colony
+        float a=r1*TAU; p=u2.xy+dir(a)*u0.x*(1.05+.5*r2); p=clamp(p,-vec2(aspect,1.)*1.1,vec2(aspect,1.)*1.1); w=0.; return vec4(p,h,w); }
+      h+=(r1-.5)*4.5+(r2-.5)*2.;
+      vec2 toC=u2.xy-p;
+      p+=dir(h)*u0.y*dt+normalize(toC+1e-4)*u0.z*dt+vec2(sin(p.y*3.+t*.5),0.)*.03*dt;    // a random walk, drifting toward the reef, with a slow current
+      vec2 q=(floor(p/ax)+.5)*ax; float e=ax;                                              // read the field texel by texel, so only a true neighbour counts
+      float near=max(max(X(q+vec2(e,0.)).r,X(q-vec2(e,0.)).r),max(X(q+vec2(0.,e)).r,X(q-vec2(0.,e)).r));
+      if(near>.5 && X(q).r<.5 && r2<u0.w) { w=1.; p=q; }                                            // touched the reef: stick (not every time, which is what makes it branch)
+      return vec4(p,h,w); }`,
+    deposit: `void place(vec4 s, out vec2 p, out vec3 col, out float size){ if(s.w>.5){ p=s.xy; col=vec3(1.,hue,mt*.01); size=1.3; } else { p=vec2(99.); col=vec3(0.); size=1.; } }`,
+    draw: `void place(vec4 s, out vec2 p, out vec3 col, out float size){ p=s.xy; col=vec3(.08,.1,.12)*(s.w>.5?8.:1.); size=1.; }` },
+  sim: `vec4 sim(vec2 p){
+    if(u2.z>.5) return vec4(0.);                                                          // a clean dish at the start
+    vec4 s=X(p);
+    if(s.r>1.){ s.gb/=s.r; s.r=1.; }
+    float pr=u1.w*smoothstep(u1.z,0.,length(p-u1.xy));                                     // crumbling: a patch loses its hold
+    s.r*=1.-pr*.06;
+    if(s.r<.5) s=vec4(0.);
+    return s; }`, simSteps: 1,
+  warp: `vec3 warp(vec2 p){ return mix(P(p),B(p),.1)*DK(.8); }`,
+  comp: `vec3 comp(vec2 p){
+    vec3 bg=mix(vec3(.0,.02,.05), vec3(.0,.13,.22), smoothstep(-1.,1.,p.y));
+    float shaft=pow(max(0.,fbm(vec2(p.x*1.4+mt*.03+p.y*.3, p.y*.3))*1.5-.5),2.);
+    bg+=vec3(.1,.3,.4)*shaft*smoothstep(-.4,1.,p.y)*(.5+.4*bassA);                         // light from the surface
+    vec4 s=X(p); vec2 e=vec2(ax*1.5,0.);
+    float sol=smoothstep(.3,.7,s.r);
+    vec2 g=vec2(X(p+e.xy).r-X(p-e.xy).r, X(p+e.yx).r-X(p-e.yx).r);
+    vec3 n=normalize(vec3(-g*4.,1.));
+    float age=clamp((mt*.01-s.b)*14.,0.,1.);                                                // 0 = grown this moment
+    vec3 col=pal(s.g+.05)*mix(1.,.6,age)+vec3(.9,.95,1.)*(1.-age)*.7;
+    float dif=.35+.75*max(dot(n,normalize(vec3(.3,.8,.5))),0.);
+    vec3 coral=col*dif+vec3(.2,.25,.3)*pow(max(dot(n,vec3(0.,0.,1.)),0.),8.)*.3;
+    float rim=smoothstep(.0,.3,s.r)*(1.-sol);
+    vec3 c=mix(bg, coral, sol)+pal(s.g)*rim*.6*(1.+.5*kick);
+    c+=P(p)*1.1+glow(p)*.6;
+    return c*vig(p); }`,
+  init(S) { S.r = .22; S.cx = 0; S.cy = -.55; S.next = rnd(22, 38); S.timer = 0; S.prune = 0; S.px = 0; S.py = 0; S.pr = .3; S.seeded = 0; },
+  update(S, dt) {
+    S.timer += dt; S.r = Math.min(1.5, S.r + dt * .012 * (.5 + Math.min(2, A.energy)));
+    if ((A.onSwing || S.timer > S.next) && S.prune <= 0) { S.timer = 0; S.next = rnd(22, 38); S.prune = 2.5; S.px = S.cx + rnd(-.6, .6) * S.r; S.py = S.cy + rnd(-.2, .8) * S.r; S.pr = rnd(.15, .35) + .3 * S.r; }
+    S.prune -= dt;
+    S.u0[0] = S.r; S.u0[1] = (.5 + .9 * Math.min(2, A.energy)) * .55 + .6 * A.kick; S.u0[2] = .012; S.u0[3] = .2 + .25 * Math.min(2, A.energy);   // specks wander a texel or so a frame: arriving slowly is what makes branches
+    S.u1[0] = S.px; S.u1[1] = S.py; S.u1[2] = S.pr; S.u1[3] = S.prune > 0 ? 1 : 0;
+    S.u2[0] = S.cx; S.u2[1] = S.cy; S.u2[2] = S.t < .03 ? 1 : 0;
+  },
+  simDraw(S) { if (S.seeded < 3) { S.seeded++; for (let i = 0; i < 4; i++) D.sprite(S.cx + (i - 1.5) * .18 * D.aspect, S.cy - .3 + rnd(0, .05), .012, 0, 1, A.hue + i * .07, S.mt * .01, 1, 0, 0, .1, 0); } },   // the first polyps on the seabed
+  draw(S) { if (A.onKick) D.sprite(S.cx, S.cy, .5 + .4 * S.r, 0, 1, .9, .85, .05 * CFG.punch, 0, 0, 1, 1); }
+});
+
+PRESETS.push({
+  name: 'Heartwood', accent: '#fcd9a0',
+  // The cut face of a tree, growing while you watch. Every beat lays down a ring at the bark, its edge wobbled by the
+  // waveform, pale early wood after the beat darkening into late wood before the next; the trunk swells so the
+  // rings move inward and compress toward the heart, which is how a real one looks. A kick draws a hard dark line,
+  // a swing leaves a knot, and the whole history of the song is there in the rings until it reaches the centre.
+  warp: `vec3 warp(vec2 p){ vec2 q=p*(1.+u0.x); return P(q)*DK(.9995)*(1.-u0.y); }`,
+  comp: `vec3 comp(vec2 p){
+    vec2 po=p*vec2(1./1.09,1.); float r=length(po), a=atan(po.y,po.x);   // the log is a little wider than tall, as a real one is
+    vec3 wood=P(p); wood+=vec3(.16,.08,.03)*(1.-smoothstep(.0,.25,lum(wood)));              // bare heart where no ring has reached yet
+    float face=smoothstep(.815,.80,r);
+    float grain=.88+.12*noise(vec2(a*16.+seed.x*9., r*5.))+.06*sin(a*90.+r*40.);           // the grain runs out from the heart
+    float crack=smoothstep(.014,.0,abs(fract(a/TAU*7.+seed.x)-.5)-.49)*smoothstep(.06,.5,r)*smoothstep(.8,.55,r)*.75;   // drying checks from the heart
+    wood*=grain*(1.-crack);
+    wood*=mix(.72,1.,smoothstep(0.,.45,r));                                               // the heart is a shade darker
+    vec3 c=mix(vec3(.025,.018,.012)*(.7+.3*fbm(p*4.)), wood, face);
+    float bark=smoothstep(.80,.845,r)*smoothstep(1.0,.93,r);
+    c+=vec3(.22,.12,.06)*bark*(.3+.7*fbm(vec2(a*9.+seed.y*5.,r*60.)))*(1.+.3*bassA)*(.7+.6*noise(vec2(a*30.,r*8.)));   // rough bark, deeply furrowed
+    c+=glow(p)*.25;
+    return c*vig(p); }`,
+  init(S) { S.knots = []; S.hard = 0; S.seeded = false; },
+  update(S, dt) {
+    S.u0[0] = dt * (.07 + .06 * Math.min(2, A.energy)) * (1 + 1.5 * Math.max(0, 1 - S.t / 25));   // how much the trunk swells this frame: a beat is about one ring; faster at first, so the old log closes into the eye sooner
+    S.u0[1] = S.t < .25 ? 1 : 0;
+    if (A.onSwing) S.knots.push({ x: rnd(-.5, .5), y: rnd(-.5, .5), n: 6 });
+    S.hard = A.onKick ? 1 : 0;
+  },
+  draw(S) {
+    const asp = D.aspect, R = .8, k = 1 - Math.min(1, A.beat), amp = .006 + .018 * Math.min(2.5, A.bassA);
+    const pr = .9, pg = .66, pb = .36, dr = .42, dg = .2, db = .07;
+    palJS(A.hue, tmpC);
+    if (!S.seeded && S.t >= .3) {         // the log already has years in it when the scene opens: a set of old rings, random spacing, a few hard ones
+      S.seeded = true;
+      for (let j = 0, rr = .1; rr < .78; j++, rr += rnd(.009, .03)) {
+        const q = Math.random() < .2 ? 1.2 : rnd(.1, .7), ph = rnd(0, TAU), wob = rnd(.004, .012) * Math.min(1, rr / .45);   // small rings wobble less, or they read as polygons
+        D.line(240, (i, u, p) => { const a = u * TAU, rad = rr * (1 + .06 * Math.sin(a * 2 + ph)) + wob * Math.sin(a * 7 + ph * 3); p.x = Math.cos(a) * rad * 1.09; p.y = Math.sin(a) * rad; p.r = (pr + (dr - pr) * q) * .9; p.g = (pg + (dg - pg) * q) * .9; p.b = (pb + (db - pb) * q) * .9; }, { w: q > 1 ? .005 : .006, closed: true, gain: q > 1 ? .7 : .25, core: .4 });
+      }
+    }
+    D.line(360, (i, u, p) => {
+      const w = sampleWave(mirrorU(u)), a = u * TAU, bark = .012 * (noise2(Math.cos(a) * 3 + 7, Math.sin(a) * 3) - .5), rr = R + w * amp + bark;
+      p.x = Math.cos(a) * rr * 1.09; p.y = Math.sin(a) * rr;
+      const q = S.hard ? 1.4 : k; p.r = (pr + (dr - pr) * q) * (.8 + .2 * tmpC.r); p.g = (pg + (dg - pg) * q) * (.8 + .2 * tmpC.g); p.b = (pb + (db - pb) * q) * (.8 + .2 * tmpC.b);
+    }, { w: S.hard ? .005 : .006, closed: true, gain: (S.hard ? .9 : .28) * (1 + .3 * A.kick), core: .4 });
+    const keep = [];
+    for (const kn of S.knots) { kn.n--; for (let j = 0; j < 3; j++) { const rr = .04 + j * .02; D.line(40, (i, u, p) => { const a = u * TAU; p.x = kn.x + Math.cos(a) * rr * 1.3; p.y = kn.y + Math.sin(a) * rr; p.r = .35; p.g = .17; p.b = .06; }, { w: .006, closed: true, gain: .3, core: .5 }); } if (kn.n > 0) keep.push(kn); }
+    S.knots = keep;
+  }
+});
+const noise2 = (x, y) => { const s = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453; return s - Math.floor(s); };
+
+PRESETS.push({
+  name: 'Downpour', accent: '#7dd3fc',
+  // Rain on a window at night, city lights behind it. Each drop lands, runs, and leaves a wet trail that catches the
+  // light; how hard it rains follows the song, a kick throws a handful against the glass. Bass fills the pane from
+  // the bottom like a flood, its surface a live waveform, and when it reaches the top it spills and drains away.
+  sim: `vec4 sim(vec2 p){
+    vec4 s=X(p); float th=s.r;
+    float v=.0018+.03*smoothstep(.1,.9,th);                                                 // thick water runs, a thin film clings
+    float wob=(noise(vec2(p.x*34.+seed.x*9.,p.y*6.+t*2.))-.5)*.006*smoothstep(.1,.5,th);
+    float up=X(p+vec2(wob, v*u1.z)).r;                                                      // what is above comes down
+    float n=max(up*.995, th*.982);
+    float wl=u0.x-1.+.035*wav(p.x/aspect*.5+.5)*u0.y;                                       // the flood, its surface the waveform
+    n=max(n, smoothstep(wl+.02, wl-.02, p.y)*1.3);
+    return vec4(n, 0., 0., 1.); }`, simSteps: 2,
+  warp: `vec3 warp(vec2 p){ return mix(P(p),B(p),.25)*DK(.9); }`,
+  comp: `vec3 comp(vec2 p){
+    vec4 s=X(p); vec2 e=vec2(ax*1.5,0.);
+    vec2 g=vec2(X(p+e.xy).r-X(p-e.xy).r, X(p+e.yx).r-X(p-e.yx).r);
+    float th=clamp(s.r,0.,1.5), flood=smoothstep(1.,1.2,s.r), wet=smoothstep(.02,.15,th);
+    vec2 q=p+g*(.6+.4*flood);
+    q+=flood*vec2(sin(p.y*28.+t*3.)*.012, sin(p.x*18.-t*2.5)*.012);                        // the flood has waves of its own
+    vec3 dry=B(p)*.9+vec3(.01,.012,.02);                                                    // the city, out of focus through dry glass
+    vec3 through=P(q)*1.3+B(q)*.5;                                                           // through water the lights come sharp and bent
+    vec3 c=mix(dry, through, wet);
+    c=mix(c, c*vec3(.55,.8,1.)+vec3(.0,.04,.09), flood);
+    vec3 n=normalize(vec3(-g*6.,1.));
+    c+=vec3(1.)*pow(max(0.,dot(n, normalize(vec3(.3,.6,.7)))),30.)*.7*wet;                  // the drops' highlights
+    c+=vec3(.6,.8,1.)*smoothstep(.1,.5,length(g)*2.)*.3*wet;                                // rims catching the light
+    float wl=u0.x-1.+.035*wav(p.x/aspect*.5+.5)*u0.y;
+    c+=vec3(.7,.9,1.)*smoothstep(.025,.0,abs(p.y-wl))*u0.z*(.8+kick);                        // the meniscus
+    c+=glow(p)*.35;
+    return c*vig(p); }`,
+  init(S) { S.lvl = 0; S.drain = 0; S.lights = []; for (let i = 0; i < 26; i++) S.lights.push({ x: rnd(-1, 1), y: rnd(-.9, .6), s: rnd(.03, .1), h: Math.random(), v: rnd(-.03, .03), b: i / 26 }); S.gush = 0; },
+  update(S, dt) {
+    if (S.drain > 0) { S.drain -= dt; S.lvl = Math.max(0, S.lvl - dt * 1.1); }
+    else { S.lvl += dt * (.012 + .09 * Math.max(0, Math.min(2.5, A.bassA) - 1.05)) * CFG.speed; if (S.lvl > 1.95 || (A.onSwing && S.lvl > .3)) S.drain = 2.4; }
+    S.u0[0] = S.lvl; S.u0[1] = .6 + Math.min(2, A.bassA); S.u0[2] = S.lvl > .03 ? 1 : 0;
+    S.u1[2] = Math.min(2.5, dt * 60) * CFG.speed;
+  },
+  simDraw(S, dt) {
+    const asp = D.aspect, rate = (3 + 30 * Math.min(2, A.energy) * (.4 + .6 * Math.min(2, A.trebA))) * dt;
+    for (let n = Math.floor(rate + Math.random()); n > 0; n--) drop(rnd(-1, 1) * asp, rnd(-.7, 1), rnd(.5, 1.1), rnd(.008, .022));
+    if (A.onKick) for (let i = 0; i < 7; i++) drop(rnd(-1, 1) * asp, rnd(-.6, 1), 1.3 * CFG.punch, rnd(.02, .05));   // a kick throws a handful at the glass
+  },
+  draw(S, dt) {
+    const asp = D.aspect;
+    for (const l of S.lights) {                                                             // the lights behind the glass: each one a slice of the spectrum, the traffic crawling
+      l.x += l.v * dt; if (l.x > 1.1) l.x = -1.1; if (l.x < -1.1) l.x = 1.1;
+      const lv = sampleSpec(l.b * .85); palJS(A.hue + l.h * .6, tmpC);
+      D.sprite(l.x * asp, l.y, l.s + .06 * lv, 0, tmpC.r * .7 + .3, tmpC.g * .7 + .3, tmpC.b * .7 + .3, (.08 + .35 * lv), 0, 0, .35, 0);
+    }
+  }
+});
+
+PRESETS.push({
+  name: 'Pendulum', accent: '#f0abfc', cam: .6,
+  // A pendulum wave: a row of pendulums, each a little slower than the last, released together on a kick. They
+  // drift out of step into snakes and braids, fall into pairs, scatter, and come back into one line after sixteen
+  // beats, because their periods are set to the song's beat. Bass widens the swing, treble lights the bobs.
+  warp: `vec3 warp(vec2 p){ vec2 q=p*(1.-.002*spd); return mix(P(q),B(q),.08)*DK(.82); }`,
+  comp: `vec3 comp(vec2 p){
+    vec3 c=vec3(.01,.008,.02)+pal(hue+.5)*.03*smoothstep(.25,.0,abs(p.y));                        // the axis they hang from
+    c+=P(p)*1.25+glow(p)*1.;
+    return c*vig(p); }`,
+  init(S) { S.n = 24; S.t0 = 0; S.per = .5; S.lastK = 0; S.beatN = 0; S.amp = .5; S.py = new Float32Array(24).fill(.5); },
+  update(S, dt) {
+    S.lastK += dt;
+    if (A.onKick) { if (S.lastK > .2 && S.lastK < 2) S.per += (S.lastK - S.per) * .3; S.lastK = 0; S.beatN++; if (S.beatN >= 16 || A.onSwing) { S.beatN = 0; S.t0 = S.t; } }   // released together every sixteen beats
+    if (A.onSwing) { S.beatN = 0; S.t0 = S.t; }
+    S.amp += ((.45 + .35 * Math.min(2, A.bassA)) - S.amp) * Math.min(1, dt * 4);
+  },
+  draw(S) {
+    const asp = D.aspect, n = S.n, T = S.per * 16, tt = S.t - S.t0, rel = Math.exp(-tt * 3);
+    for (let i = 0; i < n; i++) {
+      const u = i / (n - 1), x = (u * 2 - 1) * asp * .9, cycles = 24 + i, w = TAU * cycles / T;    // the i-th pendulum makes one more swing per cycle than the last
+      const y = S.amp * Math.cos(w * tt), lv = sampleSpec(.1 + u * .7);
+      palJS(A.hue + u * .6, tmpC);
+      D.line(2, (k, v, p) => { p.x = x; p.y = v * y; p.r = tmpC.r * .5; p.g = tmpC.g * .5; p.b = tmpC.b * .5; }, { w: .0025, gain: .8 + .6 * A.kick, core: .3 });
+      D.line(2, (k, v, p) => { p.x = x; p.y = k ? y : S.py[i]; p.r = tmpC.r; p.g = tmpC.g; p.b = tmpC.b; }, { w: .012 + .01 * lv, gain: .9 + 1.2 * lv + 1.5 * A.kick, core: .8 });   // the bob, as the stroke it made this frame
+      D.sprite(x, y, .03 + .025 * lv + .03 * A.kick + .02 * rel, 0, 1, 1, 1, .4 + .6 * lv + 1.5 * A.kick + rel, 0, 0, .5, 1);
+      S.py[i] = y;
+    }
+    if (rel > .5) D.line(n, (i, u, p) => { p.x = (u * 2 - 1) * asp * .9; p.y = S.amp; p.r = p.g = p.b = 1; }, { w: .004, gain: rel, core: .5 });   // the bar that lets them go
+  }
+});
+
 // ---------- Renderer ----------
 const $ = id => document.getElementById(id);
 const AUXH = 270;
@@ -2287,7 +2930,14 @@ const DETAIL = [['Auto', 1080], ['720p', 720], ['1080p', 1080], ['1440p', 1440],
 // Which 3D spaces suit which scene (1 tunnel, 2 dome, 3 floor). Scenes not listed are either flat or already 3D.
 const SPACES = { 'Plasma Tide': [1, 2], 'Prism Cathedral': [2, 3], 'Aurora Veil': [2], 'Ink Bloom': [3], 'Solar Petals': [1], 'Julia Garden': [1, 2, 3], 'Silk Ribbons': [1],
   'Neon Horizon': [2], 'Velvet Smoke': [2], 'Oil Slick': [3], 'Acrylic Pour': [3], 'Glass Tide': [1], 'Pool Floor': [3], 'Quicksilver': [3], 'Petri': [2, 3], 'Maelstrom': [3, 1], 'Hall of Mirrors': [2],
-  'Slime Mould': [2, 3], 'Lichtenberg': [2], 'Cathode': [1], 'Deep Field': [1, 3], 'Loom': [1, 3], 'Henry': [2], 'Henry Deux': [2], 'Henry 3': [2, 3] };
+  'Slime Mould': [2, 3], 'Lichtenberg': [2], 'Cathode': [1], 'Deep Field': [1, 3], 'Loom': [1, 3], 'Henry': [2], 'Henry Deux': [2], 'Henry 3': [2, 3],
+  'Vinyl': [3], 'Harp': [1, 2], 'Cymatics': [3], 'Shatter': [1, 2], 'Fireflies': [2], 'Coral': [2, 3], 'Heartwood': [3], 'Pendulum': [1] };
+// The four groups the scene list is split into in Settings. A scene not listed lands in Light.
+const GROUPS = {
+  Liquid: ['Ink Bloom', 'Velvet Smoke', 'Oil Slick', 'Acrylic Pour', 'Glass Tide', 'Moon Pool', 'Pool Floor', 'Quicksilver', 'Gel Orbit', 'Maelstrom', 'Downpour'],
+  Light: ['Plasma Tide', 'Event Horizon', 'Prism Cathedral', 'Aurora Veil', 'Solar Petals', 'Starforge', 'Silk Ribbons', 'Hall of Mirrors', 'Lichtenberg', 'Deep Field', 'Shatter', 'Tungsten'],
+  Life: ['Julia Garden', 'Petri', 'Slime Mould', 'Murmuration', 'Henry', 'Henry Deux', 'Henry 3', 'Fireflies', 'Coral', 'Heartwood'],
+  Signal: ['Neon Horizon', 'Ridgeline', 'Cathode', 'Loom', 'Vinyl', 'Lathe', 'Harp', 'Cymatics', 'Pendulum'] };
 // What a scene is called in the address bar: its name in kebab-case, except the Henrys, which go by the triangle.
 const SLUGS = { 'Henry': 'Δ', 'Henry Deux': 'Δ2', 'Henry 3': 'Δ3' };
 let downProg, upProg;
@@ -2299,6 +2949,7 @@ function build() {
     if (P.sim) P.simProg = program(VERT, HEAD + P.sim + SIM_MAIN);
     if (P.agents) AGENTS.setup(P);
     P.stages = SPACES[P.name] || [];
+    P.group = Object.keys(GROUPS).find(g => GROUPS[g].includes(P.name)) || 'Light';
     P.slug = SLUGS[P.name] || P.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
   }
 }
@@ -2422,7 +3073,7 @@ function tick(now) {
   const raw = (now - last) / 1000; last = now;
   const dt = Math.min(1 / 20, Math.max(1 / 240, raw));
   resize(); clock += dt; sinceSwitch += dt;
-  if (started) analyze(dt); else fakeFeatures(clock, dt);
+  if (started) analyze(dt); else fakeFeatures(clock, dt, true);     // nothing chosen yet: a calm stand-in, not a beat
   if (CFG.auto && !old && ((sinceSwitch > CFG.sceneSec * .8 && A.onKick) || sinceSwitch > CFG.sceneSec * (A.live ? 1.2 : 1.5))) nextRandom();
   render(dt); meters(dt);
   // On Auto detail, drop internal resolution if this machine cannot hold ~45 fps.
@@ -2490,7 +3141,7 @@ function setStage(i) { if (i && !cur.P.stages.includes(i)) return; cur.stage = i
 function sectionDefault(secId) { for (const r of ROWS) if (r[0] === secId) CFG[r[1]] = DEFAULTS[r[1]]; syncDash(); saveCfg(); }
 function sectionRandom(secId) { for (const [sec, key, , , , stp, , , band] of ROWS) if (sec === secId && band) CFG[key] = +(Math.round((band[0] + Math.random() * (band[1] - band[0])) / stp) * stp).toFixed(3); syncDash(); saveCfg(); }
 function setCam(on) { if (on) CFG.cam = CAM.lastAmt || 1; else { CAM.lastAmt = CFG.cam || 1; CFG.cam = 0; } syncDash(); saveCfg(); }
-function setDash(open) { dash.classList.toggle('open', open); document.body.classList.toggle('dash-open', open); $('bDash').setAttribute('aria-pressed', String(open)); tab.textContent = open ? 'Close' : 'Settings'; tab.title = open ? 'Close settings' : 'Open settings'; poke(); }
+function setDash(open) { if (open && cur) { showGroup = cur.P.group; syncGroups(); } dash.classList.toggle('open', open); document.body.classList.toggle('dash-open', open); $('bDash').setAttribute('aria-pressed', String(open)); tab.textContent = open ? 'Close' : 'Settings'; tab.title = open ? 'Close settings' : 'Open settings'; poke(); }
 function fullscreen() {
   const el = document.documentElement;
   if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
@@ -2528,8 +3179,10 @@ function buildDash() {
   dash.querySelectorAll('[data-def]').forEach(b => { b.onclick = () => sectionDefault(b.dataset.def); });
   STAGES.forEach((name, i) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = name; b.title = i ? 'Show this scene as a ' + name.toLowerCase() : 'Show this scene flat'; b.onclick = () => setStage(i); $('spaceBtns').appendChild(b); });
   DETAIL.forEach(([name], i) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = name; b.onclick = () => { setDetail(i); syncDash(); }; $('detailBtns').appendChild(b); });
+  Object.keys(GROUPS).forEach(name => { const b = document.createElement('button'); b.type = 'button'; b.textContent = name; b.title = 'Show the ' + name + ' scenes'; b.onclick = () => { showGroup = name; syncGroups(); }; $('groupBtns').appendChild(b); });
   PRESETS.forEach((P, i) => {
     const li = document.createElement('li'), g = document.createElement('button'), f = document.createElement('button'), h = document.createElement('button');
+    li.dataset.group = P.group;
     g.type = f.type = h.type = 'button'; g.className = 'go'; f.className = h.className = 'tg'; g.textContent = P.name; g.title = 'Show this scene now'; f.textContent = 'Fav'; h.textContent = 'Hide';
     g.onclick = () => go(i);
     f.onclick = () => { if (CFG.fav[P.name]) delete CFG.fav[P.name]; else { CFG.fav[P.name] = true; delete CFG.hide[P.name]; } syncDash(); saveCfg(); };
@@ -2538,7 +3191,15 @@ function buildDash() {
     $('sceneList').appendChild(li);
   });
 }
+// The scene list shows one group at a time; opening the drawer lands on the group of the scene that is playing.
+let showGroup = '';
+function syncGroups() {
+  if (!showGroup) showGroup = cur ? cur.P.group : Object.keys(GROUPS)[0];
+  [...$('groupBtns').children].forEach(b => b.setAttribute('aria-pressed', String(b.textContent === showGroup)));
+  [...$('sceneList').children].forEach(li => li.classList.toggle('out', li.dataset.group !== showGroup));
+}
 function syncDash() {
+  syncGroups();
   dash.querySelectorAll('.row').forEach(r => r._sync && r._sync());
   $('sceneList').querySelectorAll('li').forEach(li => li._sync());
   [...$('detailBtns').children].forEach((b, i) => b.setAttribute('aria-pressed', String(i === CFG.detail)));
@@ -2549,7 +3210,7 @@ function syncDash() {
 function markScene() { [...$('sceneList').children].forEach((li, i) => li.classList.toggle('cur', !!cur && i === cur.i)); }
 function syncSource() {
   $('micRow').hidden = sourceKind !== 'mic';
-  $('inTxt').textContent = !A.live ? 'No source chosen yet.' : sourceKind === 'mic' ? 'Listening to: ' + micLabel : sourceKind === 'tab' ? 'Listening to: tab or system audio' : sourceKind === 'file' ? 'Playing: audio file' : 'Playing: demo beat';
+  $('inTxt').textContent = !A.live ? 'Not listening yet: the picture runs on a built-in stand-in.' : sourceKind === 'mic' ? 'Listening to: ' + micLabel : sourceKind === 'tab' ? 'Listening to: tab or system audio' : sourceKind === 'file' ? 'Playing: audio file' : 'Playing: demo beat';
 }
 const mB = $('mB'), mM = $('mM'), mT = $('mT'), mBeat = $('mBeat'), inBar = $('inBar'), note = $('note');
 function meters(dt) {
@@ -2604,7 +3265,8 @@ window.addEventListener('drop', e => { e.preventDefault(); dragDepth = 0; $('dro
 // ---------- Boot ----------
 // On a phone the microphone leads: no phone browser captures another app's audio in practice, even where the
 // function exists. Where it is missing the option goes; where a phone does have it, it drops to the bottom.
-const canCapture = !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia);
+// Firefox offers the share dialog but never returns audio from it (Mozilla bug 1541425), so there the option goes too.
+const canCapture = !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) && !/Firefox\//.test(navigator.userAgent);
 if (!canCapture || PHONE) {
   const m = $('srcMic'), t = $('srcTab'); m.classList.add('main'); m.querySelector('small').textContent = 'Listens to the room. Play the music on a speaker nearby.'; m.parentNode.prepend(m);
   if (!canCapture) t.hidden = true; else { t.classList.remove('main'); t.parentNode.append(t); t.querySelector('small').textContent = 'Rarely works on a phone, but this browser offers it.'; }
@@ -2628,7 +3290,7 @@ if (!gl) {
 }
 // Hook for automated checks: steps the renderer on a stand-in signal with no real audio.
 window.__viz = {
-  names: PRESETS.map(p => p.name), A, CAM, CFG, get cur() { return cur; },
+  names: PRESETS.map(p => p.name), A, CAM, CFG, get cur() { return cur; }, get player() { return player; },
   step(n, dt) { testMode = true; dt = dt || 1 / 60; resize(); for (let i = 0; i < n; i++) { clock += dt; fakeFeatures(clock, dt); render(dt); } gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4)); },
   go(i, stage) { go(i, true); if (stage != null) { cur.stage = stage; label(); } }, cut(i) { go(i, false); }, live() { testMode = false; }, sync: () => syncDash()
 };

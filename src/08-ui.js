@@ -57,7 +57,7 @@ function setStage(i) { if (i && !cur.P.stages.includes(i)) return; cur.stage = i
 function sectionDefault(secId) { for (const r of ROWS) if (r[0] === secId) CFG[r[1]] = DEFAULTS[r[1]]; syncDash(); saveCfg(); }
 function sectionRandom(secId) { for (const [sec, key, , , , stp, , , band] of ROWS) if (sec === secId && band) CFG[key] = +(Math.round((band[0] + Math.random() * (band[1] - band[0])) / stp) * stp).toFixed(3); syncDash(); saveCfg(); }
 function setCam(on) { if (on) CFG.cam = CAM.lastAmt || 1; else { CAM.lastAmt = CFG.cam || 1; CFG.cam = 0; } syncDash(); saveCfg(); }
-function setDash(open) { dash.classList.toggle('open', open); document.body.classList.toggle('dash-open', open); $('bDash').setAttribute('aria-pressed', String(open)); tab.textContent = open ? 'Close' : 'Settings'; tab.title = open ? 'Close settings' : 'Open settings'; poke(); }
+function setDash(open) { if (open && cur) { showGroup = cur.P.group; syncGroups(); } dash.classList.toggle('open', open); document.body.classList.toggle('dash-open', open); $('bDash').setAttribute('aria-pressed', String(open)); tab.textContent = open ? 'Close' : 'Settings'; tab.title = open ? 'Close settings' : 'Open settings'; poke(); }
 function fullscreen() {
   const el = document.documentElement;
   if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
@@ -95,8 +95,10 @@ function buildDash() {
   dash.querySelectorAll('[data-def]').forEach(b => { b.onclick = () => sectionDefault(b.dataset.def); });
   STAGES.forEach((name, i) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = name; b.title = i ? 'Show this scene as a ' + name.toLowerCase() : 'Show this scene flat'; b.onclick = () => setStage(i); $('spaceBtns').appendChild(b); });
   DETAIL.forEach(([name], i) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = name; b.onclick = () => { setDetail(i); syncDash(); }; $('detailBtns').appendChild(b); });
+  Object.keys(GROUPS).forEach(name => { const b = document.createElement('button'); b.type = 'button'; b.textContent = name; b.title = 'Show the ' + name + ' scenes'; b.onclick = () => { showGroup = name; syncGroups(); }; $('groupBtns').appendChild(b); });
   PRESETS.forEach((P, i) => {
     const li = document.createElement('li'), g = document.createElement('button'), f = document.createElement('button'), h = document.createElement('button');
+    li.dataset.group = P.group;
     g.type = f.type = h.type = 'button'; g.className = 'go'; f.className = h.className = 'tg'; g.textContent = P.name; g.title = 'Show this scene now'; f.textContent = 'Fav'; h.textContent = 'Hide';
     g.onclick = () => go(i);
     f.onclick = () => { if (CFG.fav[P.name]) delete CFG.fav[P.name]; else { CFG.fav[P.name] = true; delete CFG.hide[P.name]; } syncDash(); saveCfg(); };
@@ -105,7 +107,15 @@ function buildDash() {
     $('sceneList').appendChild(li);
   });
 }
+// The scene list shows one group at a time; opening the drawer lands on the group of the scene that is playing.
+let showGroup = '';
+function syncGroups() {
+  if (!showGroup) showGroup = cur ? cur.P.group : Object.keys(GROUPS)[0];
+  [...$('groupBtns').children].forEach(b => b.setAttribute('aria-pressed', String(b.textContent === showGroup)));
+  [...$('sceneList').children].forEach(li => li.classList.toggle('out', li.dataset.group !== showGroup));
+}
 function syncDash() {
+  syncGroups();
   dash.querySelectorAll('.row').forEach(r => r._sync && r._sync());
   $('sceneList').querySelectorAll('li').forEach(li => li._sync());
   [...$('detailBtns').children].forEach((b, i) => b.setAttribute('aria-pressed', String(i === CFG.detail)));
@@ -116,7 +126,7 @@ function syncDash() {
 function markScene() { [...$('sceneList').children].forEach((li, i) => li.classList.toggle('cur', !!cur && i === cur.i)); }
 function syncSource() {
   $('micRow').hidden = sourceKind !== 'mic';
-  $('inTxt').textContent = !A.live ? 'No source chosen yet.' : sourceKind === 'mic' ? 'Listening to: ' + micLabel : sourceKind === 'tab' ? 'Listening to: tab or system audio' : sourceKind === 'file' ? 'Playing: audio file' : 'Playing: demo beat';
+  $('inTxt').textContent = !A.live ? 'Not listening yet: the picture runs on a built-in stand-in.' : sourceKind === 'mic' ? 'Listening to: ' + micLabel : sourceKind === 'tab' ? 'Listening to: tab or system audio' : sourceKind === 'file' ? 'Playing: audio file' : 'Playing: demo beat';
 }
 const mB = $('mB'), mM = $('mM'), mT = $('mT'), mBeat = $('mBeat'), inBar = $('inBar'), note = $('note');
 function meters(dt) {
@@ -171,7 +181,8 @@ window.addEventListener('drop', e => { e.preventDefault(); dragDepth = 0; $('dro
 // ---------- Boot ----------
 // On a phone the microphone leads: no phone browser captures another app's audio in practice, even where the
 // function exists. Where it is missing the option goes; where a phone does have it, it drops to the bottom.
-const canCapture = !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia);
+// Firefox offers the share dialog but never returns audio from it (Mozilla bug 1541425), so there the option goes too.
+const canCapture = !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) && !/Firefox\//.test(navigator.userAgent);
 if (!canCapture || PHONE) {
   const m = $('srcMic'), t = $('srcTab'); m.classList.add('main'); m.querySelector('small').textContent = 'Listens to the room. Play the music on a speaker nearby.'; m.parentNode.prepend(m);
   if (!canCapture) t.hidden = true; else { t.classList.remove('main'); t.parentNode.append(t); t.querySelector('small').textContent = 'Rarely works on a phone, but this browser offers it.'; }
@@ -195,7 +206,7 @@ if (!gl) {
 }
 // Hook for automated checks: steps the renderer on a stand-in signal with no real audio.
 window.__viz = {
-  names: PRESETS.map(p => p.name), A, CAM, CFG, get cur() { return cur; },
+  names: PRESETS.map(p => p.name), A, CAM, CFG, get cur() { return cur; }, get player() { return player; },
   step(n, dt) { testMode = true; dt = dt || 1 / 60; resize(); for (let i = 0; i < n; i++) { clock += dt; fakeFeatures(clock, dt); render(dt); } gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4)); },
   go(i, stage) { go(i, true); if (stage != null) { cur.stage = stage; label(); } }, cut(i) { go(i, false); }, live() { testMode = false; }, sync: () => syncDash()
 };

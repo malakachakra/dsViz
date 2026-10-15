@@ -14,16 +14,21 @@ PRESETS.push({
     vec3 c=P(p)*clamp(1.+dot(g,vec2(-.6,.7))*5., .45, 1.7);       // side light gives the smoke some body
     c+=glow(p)*.55+vec3(.010,.007,.026);
     return c*vig(p); }`,
-  em(S, k) { const a = k * TAU / 3 + S.mt * .06, x = Math.cos(a) * D.aspect * .55, y = Math.sin(a) * .62, tx = .3 * Math.sin(S.mt * .23 + k * 2), ty = .3 * Math.cos(S.mt * .19 + k * 3), l = Math.hypot(tx - x, ty - y); return [x, y, (tx - x) / l, (ty - y) / l, [A.bassA, A.midA, A.trebA][k]]; },
+  em(S, k) { const a = k * TAU / 3 + S.mt * .06, x = Math.cos(a) * D.aspect * .55, y = Math.sin(a) * .62, j = S.j ? S.j[k] : [0, 0], tx = .3 * Math.sin(S.mt * .23 + k * 2) + j[0], ty = .3 * Math.cos(S.mt * .19 + k * 3) + j[1], l = Math.hypot(tx - x, ty - y); return [x, y, (tx - x) / l, (ty - y) / l, [A.bassA, A.midA, A.trebA][k]]; },
   force(S, dt) {
     for (let k = 0; k < 3; k++) { const [x, y, dx, dy, lv] = this.em(S, k), a = (2.5 + 10 * lv) * dt; F.splat(x, y, dx * a, dy * a, .16); }
-    if (A.onKick) F.burst(0, 0, .8 + .35 * A.bass, .13, 10);
+    if (A.onKick) {      // the kick is a gust out of the loudest jet, and all three jets swing to aim somewhere new, so the smoke trails out across the screen; they drift back over a few seconds
+      const lv = [A.bassA, A.midA, A.trebA], k = lv.indexOf(Math.max(...lv)), [x, y, dx, dy] = this.em(S, k);
+      F.burst(x + dx * .12, y + dy * .12, .8 + .35 * A.bass, .13, 10);
+      S.j = [0, 1, 2].map(() => [rnd(-.7, .7) * D.aspect, rnd(-.7, .7)]);
+    }
+    if (S.j) for (const j of S.j) { j[0] *= Math.max(0, 1 - dt * .5); j[1] *= Math.max(0, 1 - dt * .5); }
     for (let i = Math.floor(A.trebA * 1.5 * Math.random()); i > 0; i--) { const a = rnd(0, TAU); F.splat(rnd(-1, 1) * D.aspect, rnd(-1, 1), Math.cos(a) * .35, Math.sin(a) * .35, .07); }
   },
   draw(S) {
     for (let k = 0; k < 3; k++) { const [x, y, , , lv] = this.em(S, k); palJS(A.hue + k * .28, tmpC); D.sprite(x, y, .08 + .04 * lv, 0, tmpC.r, tmpC.g, tmpC.b, .12 + .3 * lv, 0, 0, 1, 1); }
     const R = .10 + .04 * A.bassA;
-    D.line(160, (i, u, p) => { const w = sampleWave(mirrorU(u)), a = u * TAU, r = R + w * .06; p.x = Math.cos(a) * r; p.y = Math.sin(a) * r; palJS(A.hue + .2 + u * .15, p, 1); }, { w: .012, closed: true, gain: .10 + .5 * A.kick, core: .3 });
+    D.line(160, (i, u, p) => { const w = sampleWave(mirrorU(u)), a = u * TAU, r = R + w * .06; p.x = Math.cos(a) * r; p.y = Math.sin(a) * r; palJS(A.hue + .2 + u * .15, p, 1); }, { w: .012, closed: true, gain: .10, core: .3 });
   }
 });
 
@@ -46,8 +51,8 @@ PRESETS.push({
   init(S) { S.v = [0, 1, 2].map(k => ({ ph: rnd(0, TAU), sp: rnd(.15, .3) * (k % 2 ? -1 : 1) })); },
   pos(S, k) { const v = S.v[k], a = S.mt * v.sp + v.ph; return [Math.cos(a) * D.aspect * .5 * (.6 + .4 * Math.sin(a * .7 + k)), Math.sin(a * 1.3 + k) * .6]; },
   force(S, dt) {
-    for (let k = 0; k < 3; k++) { const [x, y] = this.pos(S, k); F.swirl(x, y, (k % 2 ? -1 : 1) * (.6 + 4.5 * A.midA) * dt, .16); }
-    if (A.onKick) { S.kx = rnd(-.6, .6) * D.aspect; S.ky = rnd(-.6, .6); F.burst(S.kx, S.ky, .9 + .4 * A.bass, .12, 10); }
+    for (let k = 0; k < 3; k++) { const [x, y] = this.pos(S, k); F.swirl(x, y, (k % 2 ? -1 : 1) * (.6 + 4.5 * A.midA + 3 * A.kick) * dt, .16); }     // the whirlpools spin up on a kick
+    if (A.onKick) { S.kx = rnd(-.6, .6) * D.aspect; S.ky = rnd(-.6, .6); F.burst(S.kx, S.ky, .9 + .4 * A.bass, .12, 10); F.swirl(S.kx, S.ky, (Math.random() < .5 ? -1 : 1) * .5 * CFG.punch, .2); }   // and the film folds around where the drop fell
     const a = S.mt * .11; F.splat(0, 0, Math.cos(a) * A.bassA * dt * .8, Math.sin(a) * A.bassA * dt * .8, 1.1);
   },
   draw(S) {
@@ -115,11 +120,11 @@ PRESETS.push({
     return c*vig(p); }`,
   force(S, dt) {
     for (let k = 0; k < 2; k++) { const a = S.mt * (.22 + .06 * k) + k * 3.1, x = Math.cos(a) * D.aspect * .45, y = Math.sin(a * 1.4) * .5; F.swirl(x, y, (k ? -1 : 1) * (.5 + 3.5 * A.midA) * dt, .2); F.splat(x, y, -Math.sin(a) * A.bassA * dt * 2.5, Math.cos(a * 1.4) * A.bassA * dt * 2.5, .2); }
-    if (A.onKick) F.burst(0, 0, .9 + .4 * A.bass, .14, 10);
+    if (A.onKick) { S.kx = rnd(-.6, .6) * D.aspect; S.ky = rnd(-.6, .6); F.burst(S.kx, S.ky, .9 + .4 * A.bass, .14, 10); }
   },
   draw(S) {
     for (let k = 0; k < 2; k++) { const a = S.mt * (.22 + .06 * k) + k * 3.1, lv = k ? A.midA : A.bassA; D.sprite(Math.cos(a) * D.aspect * .45, Math.sin(a * 1.4) * .5, .09 + .04 * lv, 0, 1, 1, 1, .05 + .12 * lv, 0, 0, 1, 1); }
-    if (A.onKick) D.sprite(0, 0, .16, 0, 1, 1, 1, .8, 0, 0, 1, 1);
+    if (A.onKick) D.sprite(S.kx, S.ky, .16, 0, 1, 1, 1, .8, 0, 0, 1, 1);
     for (let i = Math.floor(A.trebA * Math.random() * 1.3); i > 0; i--) D.sprite(rnd(-1, 1) * D.aspect, rnd(-1, 1), rnd(.02, .04), 0, 1, 1, 1, .5, 0, 0, 1, 1);
   }
 });

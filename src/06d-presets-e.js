@@ -1,13 +1,14 @@
 // ---------- 3.0 scenes: a 3D landscape, and three rebuilt from classic Milkdrop ideas ----------
 
 PRESETS.push({
-  name: 'Ridgeline', accent: '#f0abfc', fit: false, simSteps: 1,
+  name: 'Ridgeline', accent: '#f0abfc', fit: false, orbit: true, simSteps: 1,
   // The low-res buffer is a strip of terrain: each step every row slides toward us and the far edge takes
   // the spectrum as it is right now (bass in the middle). r = height, g = how hard the beat was hitting.
   sim: `vec4 sim(vec2 p){
-    vec4 s=X(p+vec2(0.,ax));
+    vec4 s=X(p+vec2(0.,ax*u0.x));                    // u0.x: how fast the land rolls toward us (the song's energy, a surge on a kick)
     if(p.y>1.-ax*1.5){
       float x=abs(p.x)/aspect, h=spec(.02+x*.8)*(.3+.7*smoothstep(1.05,.1,x));
+      h+=u0.z*exp(-pow((x-u0.y)*5.,2.));                // a kick raises a peak where the song is loudest right now
       s=vec4(mix(X(p).r,h,.5), kick, 0., 1.); }
     return s; }`,
   warp: `vec3 warp(vec2 p){ return P(p)*DK(.9); }`,
@@ -46,6 +47,11 @@ PRESETS.push({
     c+=pal(hue+.5+h*.4)*wire*(.25+1.3*h+1.5*s.g);                                      // rows laid down on a kick glow as they roll in
     c+=bg*.25*pow(1.-max(dot(n,-d),0.),3.);
     return mix(bg, c, exp(-tt*.30)); }`,
+  update(S, dt) {
+    S.u0[0] = Math.min(2.5, .45 + .7 * Math.min(2, A.energy) + 1.6 * A.kick);
+    let mx = 0, bi = 10; for (let i = 10; i < 420; i++) { const v = A.spec[i] * (.3 + i / 128); if (v > mx) { mx = v; bi = i; } }   // the loudest band, with the spectrum's slope taken out so it is not always the bass
+    S.u0[1] = (bi / 511 - .02) / .8; S.u0[2] = A.onKick ? .1 * Math.min(1.5, CFG.punch) : 0;
+  },
   draw() {}
 });
 
@@ -121,6 +127,7 @@ PRESETS.push({
   draw(S) {
     const R = .16 + .05 * A.bassA + .07 * A.kick;
     D.line(200, (i, u, p) => { const w = sampleWave(mirrorU(u)), a = u * TAU + S.mt * .3, r = R + w * (.05 + .06 * A.midA); p.x = Math.cos(a) * r; p.y = Math.sin(a) * r; palJS(A.hue + u * .3, p, 1.1); }, { w: .009, closed: true, gain: .8 });
+    D.line(200, (i, u, p) => { const w = sampleWave(u); p.x = (u * 2 - 1) * D.aspect * .9; p.y = -.72 + w * (.10 + .12 * A.midA); palJS(A.hue + u * .3, p, .9); }, { w: .007, gain: .13 });   // 3.8.2's trace along the bottom, faint: every copy has one and they add up
     if (A.onBeat) { S.bl = Math.min(1.5, CFG.punch); S.bs = 3 + Math.floor(Math.random() * 4); S.bh = A.hue + .5; }
     S.bl = (S.bl || 0) * .86;
     if (S.bl > .04) { palJS(S.bh, tmpC); D.sprite(0, 0, .30 + .25 * (1 - S.bl), S.mt * .5, tmpC.r, tmpC.g, tmpC.b, 1.2 * S.bl, S.bs, .02, .04, 0); }

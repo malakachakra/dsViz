@@ -1,6 +1,6 @@
 # dsViz
 
-A music visualizer that runs in the browser. It listens to whatever is playing and drives 31 scenes with it: feedback warps in the Milkdrop tradition, fluid, ripple and reaction-diffusion simulation, crowds of GPU agents (slime mould, a starling flock), a fractal dive, and 3D spaces the camera flies through.
+A music visualizer that runs in the browser. It listens to whatever is playing and drives 42 scenes with it: feedback warps in the Milkdrop tradition, fluid, ripple and reaction-diffusion simulation, crowds of GPU agents (slime mould, a starling flock), a fractal dive, and 3D spaces the camera flies through.
 
 Everything is one file, `index.html`. There is nothing to install.
 
@@ -10,6 +10,7 @@ Everything is one file, `index.html`. There is nothing to install.
 | ![Henry Deux](docs/henry-deux.png) | ![Henry 3](docs/henry-3.png) |
 | ![Moon Pool](docs/moon-pool.png) | ![Oil Slick](docs/oil-slick.png) |
 | ![Ridgeline](docs/ridgeline.png) | ![Velvet Smoke](docs/velvet-smoke.png) |
+| ![Tungsten](docs/tungsten.png) | |
 
 ## Running it
 
@@ -20,7 +21,7 @@ Open `index.html` in Chrome or Edge on a computer, then choose where the music c
 - **Microphone.** Listens to the room. Pick which microphone under Settings. On an iPad or iPhone, iOS pauses music playing on that same device while a web page holds the microphone, and refuses to open the microphone in the shared audio session that would let it carry on. That is the operating system's rule, not something the page can change: play the music on a speaker or another device nearby.
 - **Demo beat.** A built-in loop, to see how it reacts.
 
-It needs a browser with WebGL2, and is built for desktop Chrome and Edge. On a phone, choose Microphone or audio files (phones cannot capture another app's audio); swipe across the picture to change scene, and Settings is the tab on the right edge.
+It needs a browser with WebGL2, and is built for desktop Chrome and Edge. Firefox runs it, but its share dialog never carries audio, so there the capture option is not offered: use Microphone or audio files. Until a source is chosen the picture behind the start card runs on a calm built-in stand-in; nothing is listened to before you choose. On a phone, choose Microphone or audio files (phones cannot capture another app's audio); swipe across the picture to change scene, and Settings is the tab on the right edge.
 
 ## Controls
 
@@ -52,7 +53,7 @@ The Settings drawer (D) holds everything adjustable. Settings are saved in the b
 - **Picture:** Brightness, Trails, Glow, Saturation, Colour shift, with their own Random and Default.
 - **Camera:** how far it moves, whether scenes may wrap into 3D spaces (tunnel, dome, floor), and which space the current scene is in.
 - **Detail:** how sharply the picture is rendered. Auto lowers itself if the computer struggles.
-- **Scenes:** time per scene, crossfade length, Copy link, and Fav and Hide for each scene. Reset all settings keeps the Fav and Hide lists; Clear Fav and Hide empties them.
+- **Scenes:** time per scene, crossfade length, Copy link, and Fav and Hide for each scene. The list is split into four groups, Liquid, Light, Life and Signal, picked by the row of buttons above it; opening Settings lands on the group of the scene that is playing. Reset all settings keeps the Fav and Hide lists; Clear Fav and Hide empties them.
 
 ## Scenes
 
@@ -87,6 +88,17 @@ The Settings drawer (D) holds everything adjustable. Settings are saved in the b
 29. Henry
 30. Henry Deux
 31. Henry 3
+32. Vinyl
+33. Lathe
+34. Harp
+35. Cymatics
+36. Shatter
+37. Tungsten
+38. Fireflies
+39. Coral
+40. Heartwood
+41. Downpour
+42. Pendulum
 
 ## How it works
 
@@ -101,6 +113,8 @@ Some scenes lean on a simulation that runs alongside: a fluid solver whose veloc
 A scene can live in one of four spaces: flat (the picture on a plane the camera orbits), or wrapped around the camera as a tunnel, a dome or a floor. Which spaces suit which scene is a table in `07-main.js`; a scene with a horizon can set `panorama: true` so the dome keeps its sky up and its ground down.
 
 Henry is different from the rest: a painting rebuilt from scratch in a shader, so that every part of it can move with the music. Henry Deux traces the same shapes as neon over a dark trail, with a pupil that turns toward the loudest band. Henry 3 prints the painting into the fluid solver and lets it melt until the next eighth beat snaps it back.
+
+The Signal scenes treat the sound itself as a physical thing. Vinyl presses the waveform into a groove under a stylus while the platter turns, so the last minute of the song is cut into the record. Lathe turns a vase whose profile is the waveform, re-cut row by row as the tool passes. Harp drives real vibrating strings from the waveform, each tuned to its own slice of the spectrum. Cymatics shakes sand on a steel plate into the figure that the dominant pitch chooses. Pendulum releases a row of pendulums on a kick, their periods set to the beat, so they braid apart and come back into line every sixteen beats. Tungsten is one old bulb in a dark room, real glass marched ray by ray, with the waveform as its filament and a camera that drifts around it.
 
 Sound is analysed into bass, mids and treble, each measured against its own recent average, so a quiet source and a loud one drive the picture equally hard. Kicks and beats are detected from sudden rises in the spectrum.
 
@@ -126,6 +140,7 @@ python3 build.py
 | `06g-henry.js` | Henry, and the shapes the other two Henrys share |
 | `06h-henry-deux.js` | Henry Deux |
 | `06i-henry-3.js` | Henry 3 |
+| `06j-presets-h.js`, `06k-presets-i.js` | The 3.8.2 scenes |
 | `07-main.js` | Render loop and scene switching |
 | `08-ui.js` | Controls and the Settings drawer |
 

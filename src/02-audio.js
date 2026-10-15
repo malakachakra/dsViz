@@ -128,12 +128,13 @@ function settle(dt) {   // no source: let everything relax to silence
   decay(dt);
 }
 
-// Stand-in signal for automated checks: a 120 bpm pattern written straight into the features.
-function fakeFeatures(time, dt) {
+// Stand-in signal for automated checks: a 120 bpm pattern written straight into the features. Behind the start
+// card it runs calm (no beat, half level), so the picture drifts instead of looking like it is already listening.
+function fakeFeatures(time, dt, calm) {
   A.onBeat = A.onKick = false; A.onSwing = (time % 9) < dt;
-  const ph = (time * 2) % 1, bar = Math.floor(time * 2) % 4, k = Math.exp(-ph * 7), sn = (bar % 2 === 1) ? Math.exp(-ph * 9) : 0, hat = Math.exp(-((time * 4) % 1) * 12);
-  if (ph < dt * 2) { A.onBeat = A.onKick = true; A.kick = A.beat = CFG.punch; A.beats++; A.hueT += .07; }
-  const I = CFG.intensity;
+  const ph = (time * 2) % 1, bar = Math.floor(time * 2) % 4, k = calm ? .15 : Math.exp(-ph * 7), sn = (bar % 2 === 1 && !calm) ? Math.exp(-ph * 9) : 0, hat = calm ? .2 : Math.exp(-((time * 4) % 1) * 12);
+  if (ph < dt * 2 && !calm) { A.onBeat = A.onKick = true; A.kick = A.beat = CFG.punch; A.beats++; A.hueT += .07; }
+  const I = CFG.intensity * (calm ? .5 : 1);
   A.bass = (.55 + 2.3 * k) * I * CFG.bass; A.mid = (.8 + 1.3 * sn + .3 * Math.sin(time * 1.3)) * I * CFG.mid; A.treb = (.6 + 1.6 * hat * (.5 + .5 * Math.sin(time * .7))) * I * CFG.treb;
   A.bassA = ease(A.bassA, A.bass, 14, dt); A.midA = ease(A.midA, A.mid, 10, dt); A.trebA = ease(A.trebA, A.treb, 14, dt);
   A.vol = (.8 + .6 * k) * I; A.energy = 1; A.level = .6 + .3 * k; decay(dt);

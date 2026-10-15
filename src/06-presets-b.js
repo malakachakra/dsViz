@@ -31,7 +31,8 @@ PRESETS.push({
   init(S) { const n = 900; S.n = n; S.x = new Float32Array(n); S.y = new Float32Array(n); S.z = new Float32Array(n); S.vx = new Float32Array(n); S.vy = new Float32Array(n); S.vz = new Float32Array(n); S.k = new Float32Array(n); S.orb = Math.random() * TAU; S.dir = Math.random() < .5 ? -1 : 1;
     for (let i = 0; i < n; i++) { const a = Math.random() * TAU, r = Math.sqrt(Math.random()) * 1.5; S.x[i] = Math.cos(a) * r; S.z[i] = Math.sin(a) * r; S.y[i] = (Math.random() - .5) * .1; S.k[i] = Math.random(); } },
   draw(S, dt) {
-    const amt = CFG.cam, swirl = (.5 + 1.1 * A.midA) * S.dir, push = A.onKick ? (1.5 + A.bass * .4) * CFG.punch : 0, pull = .35 + .25 * A.bassA;
+    const amt = CFG.cam, swirl = (.5 + 1.1 * A.midA) * S.dir, push = A.onKick ? (1.8 + A.bass * .45) * CFG.punch : 0, pull = .35 + .25 * A.bassA;
+    if (A.onKick) S.r0 = rnd(.2, 1.3);                                        // a kick throws the whole disc outward, and harder in one ring of it, so a density wave rolls out
     S.orb += dt * (.10 + .12 * Math.min(2, A.midA)) * S.dir * Math.min(1, amt + .2);
     const yaw = S.orb + (CAM.heading * .6 + CAM.yaw * 2.5) * amt, tilt = .6 + CAM.pitch * 1.8 * amt, roll = CAM.roll * 1.5 * amt, dist = 3.3 * (1 - (1 - CAM.dist) * 1.6 * Math.min(1, amt));
     const cy = Math.cos(yaw), sy = Math.sin(yaw), ct = Math.cos(tilt), st = Math.sin(tilt), cr = Math.cos(roll), sr = Math.sin(roll), f = 2.1;
@@ -40,9 +41,9 @@ PRESETS.push({
       const arm = Math.sin(Math.atan2(z, x) * 3 - r * 4 + S.mt * .4);     // three loose spiral arms
       const ax = (-z / r) * swirl * (.4 + .6 * k) / (.35 + r) - x / r * pull * (r - .25 - .6 * k) + (x / r) * arm * .25;
       const az = (x / r) * swirl * (.4 + .6 * k) / (.35 + r) - z / r * pull * (r - .25 - .6 * k) + (z / r) * arm * .25;
-      const damp = Math.max(0, 1 - 2.2 * dt);
-      S.vx[i] = (S.vx[i] + ax * dt + (x / r) * push * (.3 + k)) * damp; S.vz[i] = (S.vz[i] + az * dt + (z / r) * push * (.3 + k)) * damp;
-      S.vy[i] = (S.vy[i] - y * 9 * dt + (push ? (Math.random() - .5) * push * .9 : 0)) * damp;      // a kick puffs the disc up, then it settles flat
+      const damp = Math.max(0, 1 - 2.2 * dt), ring = push ? Math.max(0, 1 - Math.abs(r - S.r0) / .3) * (.5 + k) : 0, all = .55 * (.3 + k) + ring;
+      S.vx[i] = (S.vx[i] + ax * dt + (x / r) * push * all) * damp; S.vz[i] = (S.vz[i] + az * dt + (z / r) * push * all) * damp;
+      S.vy[i] = (S.vy[i] - y * 9 * dt + (push ? (Math.random() - .5) * push * (.5 + ring) : 0)) * damp;      // the disc puffs up, the ring most, then it settles flat
       x += S.vx[i] * dt; y += S.vy[i] * dt; z += S.vz[i] * dt;
       if (r > 2.3) { const a = Math.random() * TAU; x = Math.cos(a) * .05; z = Math.sin(a) * .05; y = 0; S.vx[i] = S.vy[i] = S.vz[i] = 0; }
       S.x[i] = x; S.y[i] = y; S.z[i] = z;
@@ -52,7 +53,7 @@ PRESETS.push({
       palJS(A.hue + k * .22 + sp * .12, tmpC);
       D.sprite(cr * px + sr * py, -sr * px + cr * py, (.007 + .009 * k) * sc * (1 + .4 * Math.min(2, A.trebA)) * tw, 0, tmpC.r, tmpC.g, tmpC.b, (.2 + .4 * sp + .35 * A.beat) * Math.min(1.6, sc * sc * 1.6) * Math.min(1, .25 + r * 1.6) * tw, 0, 0, .9, 1);
     }
-    const sc0 = f / dist; palJS(A.hue + .1, tmpC); D.sprite(0, 0, (.14 + .1 * A.bassA + .15 * A.kick) * sc0, 0, tmpC.r, tmpC.g, tmpC.b, .05 + .22 * A.kick, 0, 0, 1, 1);
+    const sc0 = f / dist; palJS(A.hue + .1, tmpC); D.sprite(0, 0, (.14 + .1 * A.bassA) * sc0, 0, tmpC.r, tmpC.g, tmpC.b, .05 + .06 * A.kick, 0, 0, 1, 1);
   }
 });
 
@@ -80,6 +81,7 @@ PRESETS.push({
   draw(S) {
     const asp = D.aspect, amp = .26 + .1 * A.bassA;
     for (const sg of [1, -1]) D.line(240, (i, u, p) => { const s = sampleSpec(.02 + mirrorU(u) * .92), e = Math.sin(u * Math.PI); p.x = (u * 2 - 1) * asp * .9; p.y = .08 + sg * (s * amp * e + .004); palJS(A.hue + .55 + s * .3 + (sg < 0 ? .08 : 0), p, (.2 + 1.1 * s) * e); }, { w: .006, gain: sg > 0 ? 1 : .8 });
+    if (A.onKick) D.line(2, (i, u, p) => { p.x = (u * 2 - 1) * asp * 1.05; p.y = .055; p.r = 1; p.g = .35; p.b = .6; }, { w: .009, gain: 1.4 * Math.min(1.5, CFG.punch), core: .7 });   // a kick: a grid line lit at the horizon, which the ground then carries toward you
   }
 });
 

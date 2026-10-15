@@ -21,7 +21,7 @@ vec3 env(vec3 r){     // a dark room with three soft light panels in the scene's
 const drop = (x, y, amp, r) => D.sprite(x, y, r, 0, amp, 0, 0, 1, 0, 0, 1, 1);
 
 PRESETS.push({
-  name: 'Moon Pool', accent: '#93c5fd', cam: .5, fit: false, camBase: { pitch: 1.4 }, sim: WAVE_SIM('1.7', '.997'), simSteps: 3,
+  name: 'Moon Pool', accent: '#93c5fd', cam: .5, fit: false, orbit: true, camBase: { pitch: 1.4 }, sim: WAVE_SIM('1.7', '.997'), simSteps: 3,
   warp: `vec3 warp(vec2 p){ vec3 c=mix(P(p*1.004), B(p*1.004), .25); return c*DK(.955); }`,
   comp: `#define SELF
   ` + WATER_LIB + `
@@ -58,7 +58,7 @@ PRESETS.push({
 });
 
 PRESETS.push({
-  name: 'Pool Floor', accent: '#22d3ee', sim: WAVE_SIM('1.7', '.996'), simSteps: 3,
+  name: 'Pool Floor', accent: '#22d3ee', orbit: true, sim: WAVE_SIM('1.7', '.996'), simSteps: 3,
   warp: `vec3 warp(vec2 p){ vec2 q=p*(1.-.006-.012*kick); vec3 c=mix(P(q), B(q), .1); return hueRot(c,.01)*DK(.955); }`,
   comp: WATER_LIB + `
   vec3 tile(vec2 q){
@@ -73,27 +73,37 @@ PRESETS.push({
     vec3 c=tile(q)*.7+P(q)*.8+glow(q)*.4;                            // tiles, plus light the music paints on the floor
     float l1=wlap(p), l2=wlap(p+n.xy*.03);
     vec3 cs=vec3(pow(max(0.,1.-l1*9.),4.), pow(max(0.,1.-(l1+l2)*4.5),4.), pow(max(0.,1.-l2*9.),4.));
-    c*=.5+.55*min(cs,vec3(6.))*(.7+.3*bassA);                        // caustics: the ripples focus the light
+    float spot=u0.z*exp(-dot(p-u0.xy,p-u0.xy)*3.);
+    c*=.5+.55*min(cs,vec3(6.))*(.7+.3*bassA+2.5*spot);               // caustics: the ripples focus the light; a kick throws a patch of sun where its drop fell
     c+=vec3(1.)*pow(max(dot(reflect(rd,wn(p,14.)),normalize(vec3(.2,.35,.9))),0.),70.)*.6;
     return c*vig(p); }`,
   simDraw(S, dt) {
     const asp = D.aspect;
-    if (A.onKick) { S.side = -(S.side || 1); for (let i = 0; i < 9; i++) drop(S.side * asp * .98, -1 + i * .25, (-.55 - .15 * A.bass) * CFG.punch, .09); drop(rnd(-.4, .4) * asp, rnd(-.4, .4), -1.2 * CFG.punch, .09); }
+    if (A.onKick) { S.side = -(S.side || 1); for (let i = 0; i < 9; i++) drop(S.side * asp * .98, -1 + i * .25, (-.55 - .15 * A.bass) * CFG.punch, .09); drop(S.kx, S.ky, -1.2 * CFG.punch, .09); }
     for (let i = Math.floor(A.trebA * 1.4 * Math.random() + (A.onBeat ? 2 : 0)); i > 0; i--) drop(rnd(-1, 1) * asp, rnd(-1, 1), .4, .026);
     const a = S.mt * .3; drop(Math.cos(a) * asp * .5, Math.sin(a * 1.3) * .5, .08 * A.midA, .04);
   },
+  init(S) { S.swT = -1; S.swNext = rnd(3, 6); S.swA = 0; },
+  update(S, dt) {
+    if (A.onKick) { S.kx = rnd(-.6, .6) * D.aspect; S.ky = rnd(-.6, .6); } S.u0[0] = S.kx || 0; S.u0[1] = S.ky || 0; S.u0[2] = Math.min(1.5, A.kick);
+    // now and then, and on a change in the song, a shimmer of light crosses the floor in some direction
+    if (S.swT < 0) { S.swNext -= dt; if (S.swNext < 0 || A.onSwing) { S.swT = 0; S.swA = rnd(0, TAU); S.swNext = rnd(5, 11); } }
+    else { S.swT += dt / 1.8; if (S.swT > 1) S.swT = -1; }
+  },
   draw(S) {
-    const R = .16 + .05 * A.bassA + .08 * A.kick;
-    D.line(220, (i, u, p) => { const w = sampleWave(mirrorU(u)), a = u * TAU + S.mt * .2, r = R + w * (.05 + .07 * A.midA); p.x = Math.cos(a) * r; p.y = Math.sin(a) * r; palJS(A.hue + .1 + u * .2, p, 1); }, { w: .012, closed: true, gain: .5, core: .5 });
+    if (S.swT < 0) return;
+    const asp = D.aspect, c = Math.cos(S.swA), s = Math.sin(S.swA), pos = (S.swT * 2 - 1) * 1.5, k = Math.sin(S.swT * Math.PI);
+    palJS(A.hue + .1, tmpC);
+    D.line(2, (i, u, p) => { const t = (u * 2 - 1) * 1.8; p.x = c * pos * asp - s * t * asp; p.y = s * pos + c * t; p.r = tmpC.r; p.g = tmpC.g; p.b = tmpC.b; }, { w: .06, gain: .35 * k, core: 0 });
   }
 });
 
 PRESETS.push({
-  name: 'Quicksilver', accent: '#d4d4f8', cam: 1.25, sim: WAVE_SIM('1.8', '.990'), simSteps: 3,
+  name: 'Quicksilver', accent: '#d4d4f8', cam: 1.25, orbit: true, sim: WAVE_SIM('1.8', '.990'), simSteps: 3,
   warp: `vec3 warp(vec2 p){ vec3 c=mix(P(p*1.01), B(p*1.01), .3); return c*DK(.94); }`,
   comp: WATER_LIB + ENV_LIB + `
   vec3 comp(vec2 p){
-    vec3 n=wn(p,11.), r=reflect(rd,n);
+    vec3 n=normalize(wn(p,11.)+vec3(u0.xy,0.)), r=reflect(rd,n);   // u0.xy: a kick tips the whole pool toward where it struck, and it rocks back
     float fres=pow(1.-max(dot(-rd,n),0.),4.);
     vec3 c=env(r)*(1.+.3*fres)*vec3(.92,.95,1.);
     c+=P(p+n.xy*.1)*.45+glow(p)*.3;                                  // coloured light caught in the surface
@@ -103,16 +113,22 @@ PRESETS.push({
   // Six speakers under the surface, each humming at its own pitch as loud as its slice of the spectrum.
   simDraw(S, dt) {
     for (let i = 0; i < 6; i++) { const [x, y] = this.src(S, i), lv = sampleSpec(.05 + i * .15); drop(x, y, .26 * lv * Math.sin(S.t * TAU * (2.2 + i * .9)), .055); }
-    if (A.onKick) drop(0, 0, (-1.5 - .4 * A.bass) * CFG.punch, .14);
+    if (A.onKick) drop(S.kx, S.ky, (-2.4 - .6 * A.bass) * CFG.punch, .14);
   },
   draw(S) {
     for (let i = 0; i < 6; i++) { const [x, y] = this.src(S, i), lv = sampleSpec(.05 + i * .15); palJS(A.hue + i * .12, tmpC); D.sprite(x, y, .07, 0, tmpC.r, tmpC.g, tmpC.b, .3 * lv, 0, 0, 1, 1); }
-    if (A.onKick) { palJS(A.hue + .5, tmpC); D.sprite(0, 0, .2, 0, tmpC.r, tmpC.g, tmpC.b, .5 * CFG.punch, 0, 0, 1, 1); }
+    if (A.onKick) { palJS(A.hue + .5, tmpC); D.sprite(S.kx, S.ky, .2, 0, tmpC.r, tmpC.g, tmpC.b, .5 * CFG.punch, 0, 0, 1, 1); }
+  },
+  init(S) { S.kx = S.ky = S.tx = S.ty = S.vx = S.vy = 0; },
+  update(S, dt) {
+    if (A.onKick) { S.kx = rnd(-.6, .6) * D.aspect; S.ky = rnd(-.6, .6); const l = Math.hypot(S.kx, S.ky) + 1e-3, j = 2.2 * Math.min(1.5, CFG.punch); S.vx += S.kx / l * j; S.vy += S.ky / l * j; }
+    S.vx += (-S.tx * 60 - S.vx * 7) * dt; S.vy += (-S.ty * 60 - S.vy * 7) * dt; S.tx += S.vx * dt; S.ty += S.vy * dt;   // a spring: the tilt overshoots and settles in about a second
+    S.u0[0] = S.tx; S.u0[1] = S.ty;
   }
 });
 
 PRESETS.push({
-  name: 'Gel Orbit', accent: '#fb7185', fit: false,
+  name: 'Gel Orbit', accent: '#fb7185', fit: false, orbit: true,
   warp: `vec3 warp(vec2 p){ vec2 q=rot(.004)*p*(1.012+.02*kick); vec3 c=mix(P(q), B(q), .12); return hueRot(c,.006)*DK(.965); }`,
   // Real 3D: blobs of gel marched ray by ray, with the camera orbiting them. The 2D picture is the light behind them.
   comp: `#define SELF
@@ -148,8 +164,8 @@ PRESETS.push({
     c+=pow(max(dot(reflect(d3,n),normalize(R*vec3(.4,.6,.7))),0.),50.)*1.2;
     return mix(back, c, smoothstep(.03,.0,d))*vig(p); }`,
   draw(S) {
-    const R = .62 + .06 * A.bassA;
-    D.line(260, (i, u, p) => { const w = sampleWave(mirrorU(u)), a = u * TAU + S.mt * .15, r = R + w * (.08 + .1 * A.midA); p.x = Math.cos(a) * r * 1.3; p.y = Math.sin(a) * r; palJS(A.hue + u * .4, p, 1); }, { w: .014 + .01 * A.kick, closed: true, gain: .55 });
+    const y0 = .5 * Math.sin(S.mt * .09), tilt = .5 * Math.sin(S.mt * .06 + 2.), amp = .08 + .1 * A.midA, asp = D.aspect;   // the light behind the gel: the waveform as a band that drifts and tilts
+    D.line(260, (i, u, p) => { const w = sampleWave(u), x = (u * 2 - 1) * asp * 1.1, y = y0 + w * amp; p.x = x * Math.cos(tilt) - y * Math.sin(tilt); p.y = x * Math.sin(tilt) + y * Math.cos(tilt); palJS(A.hue + u * .4, p, 1); }, { w: .014, gain: .55 });
     for (let k = 0; k < 3; k++) { const a = S.mt * (.3 + .1 * k) + k * 2.1; palJS(A.hue + .5 + k * .15, tmpC); D.sprite(Math.cos(a) * D.aspect * .6, Math.sin(a * 1.3) * .6, .12 + .08 * [A.bassA, A.midA, A.trebA][k], 0, tmpC.r, tmpC.g, tmpC.b, .10 + .12 * [A.bassA, A.midA, A.trebA][k], 0, 0, 1, 1); }
   }
 });
