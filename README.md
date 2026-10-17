@@ -1,4 +1,4 @@
-# dsViz
+# lemondrop
 
 A music visualizer that runs in the browser. It listens to whatever is playing and drives 42 scenes with it: feedback warps in the Milkdrop tradition, fluid, ripple and reaction-diffusion simulation, crowds of GPU agents (slime mould, a starling flock), a fractal dive, and 3D spaces the camera flies through.
 
@@ -16,7 +16,7 @@ Everything is one file, `index.html`. There is nothing to install.
 
 Open `index.html` in Chrome or Edge on a computer, then choose where the music comes from:
 
-- **Capture tab or system audio.** Pick the window, tab or screen that is playing, then tick the "Share audio" box at the bottom of the browser's dialog before confirming. Without that box the visualizer hears nothing; the browser owns the dialog, so the page cannot tick it for you. To skip the dialog altogether, pick a loopback input (Windows "Stereo Mix", or a virtual cable) as the Microphone: dsViz remembers the choice.
+- **Capture tab or system audio.** Pick the window, tab or screen that is playing, then tick the "Share audio" box at the bottom of the browser's dialog before confirming. Without that box the visualizer hears nothing; the browser owns the dialog, so the page cannot tick it for you. To skip the dialog altogether, pick a loopback input (Windows "Stereo Mix", or a virtual cable) as the Microphone: lemondrop remembers the choice.
 - **Play audio files.** Choose files, or drop them anywhere on the page.
 - **Microphone.** Listens to the room. Pick which microphone under Settings. On an iPad or iPhone, iOS pauses music playing on that same device while a web page holds the microphone, and refuses to open the microphone in the shared audio session that would let it carry on. That is the operating system's rule, not something the page can change: play the music on a speaker or another device nearby.
 - **Demo beat.** A built-in loop, to see how it reacts.
@@ -42,7 +42,7 @@ The control strip appears when you move the mouse and fades when you stop.
 | S | Change the audio source |
 | Esc | Close Settings or the source card |
 
-The address follows the scene, so a link opens dsViz right there: `#Δ` is Henry, `#Δ/dome` is Henry in the dome, `#Δ2` and `#Δ3` are the other Henrys, and every other scene goes by its name (`#slime-mould`, `#hall-of-mirrors`). Copy link under Settings copies the address; on a phone it opens the share sheet.
+The address follows the scene, so a link opens lemondrop right there: `#Δ` is Henry, `#Δ/dome` is Henry in the dome, `#Δ2` and `#Δ3` are the other Henrys, and every other scene goes by its name (`#slime-mould`, `#hall-of-mirrors`). Copy link under Settings copies the address; on a phone it opens the share sheet.
 
 ## Settings
 

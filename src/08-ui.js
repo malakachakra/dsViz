@@ -44,10 +44,10 @@ $('bFavOnly').onclick = () => { CFG.favOnly = !CFG.favOnly; syncDash(); saveCfg(
 $('bReset').onclick = () => { const keep = { fav: CFG.fav, hide: CFG.hide, micId: CFG.micId }; Object.assign(CFG, JSON.parse(JSON.stringify(DEFAULTS)), keep); setDetail(CFG.detail); syncDash(); saveCfg(); };   // the scene lists survive a reset
 $('bClear').onclick = () => { CFG.fav = {}; CFG.hide = {}; syncDash(); saveCfg(); };
 $('micPick').onchange = e => { CFG.micId = e.target.value; saveCfg(); choose(useMic); };
-// Copy link: the address already names the scene and its space, so the link opens dsViz right there. Phones get the share sheet.
+// Copy link: the address already names the scene and its space, so the link opens lemondrop right there. Phones get the share sheet.
 async function copyLink() {
   const b = $('bLink'), url = location.href;
-  if (TOUCH && navigator.share) { try { await navigator.share({ title: 'dsViz', url }); } catch (e) {} return; }
+  if (TOUCH && navigator.share) { try { await navigator.share({ title: 'lemondrop', url }); } catch (e) {} return; }
   try { await navigator.clipboard.writeText(url); b.textContent = 'Copied'; setTimeout(() => { b.textContent = 'Copy link'; }, 1500); }
   catch (e) { window.prompt('Copy this link', url); }
 }

@@ -69,7 +69,7 @@ function label() {
   const g = $('spaceBtns'); if (g) [...g.children].forEach((b, i) => { b.disabled = i > 0 && !cur.P.stages.includes(i); b.setAttribute('aria-pressed', String((cur.stage || 0) === i)); });
   setHash();
 }
-// The address follows the scene (#slug, or #slug/space), so a copied link opens dsViz right there. replaceState keeps Back working.
+// The address follows the scene (#slug, or #slug/space), so a copied link opens lemondrop right there. replaceState keeps Back working.
 function setHash() {
   const h = '#' + cur.P.slug + (cur.stage ? '/' + STAGES[cur.stage].toLowerCase() : '');
   try { history.replaceState(null, '', h); } catch (e) { try { location.replace(h); } catch (e2) {} }

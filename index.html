@@ -8,8 +8,8 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHBhdGggZD0iTTMyIDNMNjIgNTlIMnoiIGZpbGw9IiM2ZDFmYjAiIHN0cm9rZT0iI2ZmNWZhMiIgc3Ryb2tlLXdpZHRoPSIzIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+PHBhdGggZD0iTTE0IDQxcTE4LTE2IDM2IDBxLTE4IDE2LTM2IDB6IiBmaWxsPSIjMmE4ZmI4Ii8+PGNpcmNsZSBjeD0iMzIiIGN5PSI0MSIgcj0iNy41IiBmaWxsPSIjZjRmMWZmIi8+PGNpcmNsZSBjeD0iMzMiIGN5PSI0MiIgcj0iNCIgZmlsbD0iIzExMSIvPjwvc3ZnPg==">
-<title>dsViz</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Syne:wght@600;800&family=DM+Mono:wght@400;500&display=swap">
+<title>lemondrop</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Slackey&family=Syne:wght@600;800&family=DM+Mono:wght@400;500&display=swap">
 <style>
 /* Layout: one full-bleed canvas; a source card docked bottom-left; a slim control strip that fades with the pointer; a settings drawer on the right. */
 :root {
@@ -37,7 +37,7 @@ button[aria-pressed="true"] { background: var(--accent); border-color: var(--acc
 input[type=range] { accent-color: var(--accent); min-width: 0; width: 100%; }
 
 #start { z-index: 2; position: fixed; left: 16px; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); max-width: 400px; max-height: calc(100% - 32px); overflow-y: auto; background: var(--glass); border: 1px solid var(--line); border-radius: 18px; padding: 22px; backdrop-filter: blur(22px) saturate(1.4); -webkit-backdrop-filter: blur(22px) saturate(1.4); display: flex; flex-direction: column; gap: 14px; }
-#start h1 { font-family: var(--display); font-weight: 800; font-size: clamp(24px, 6vh, 34px); line-height: .95; letter-spacing: -.02em; margin: 0; text-wrap: balance; }
+#start h1 { font-family: "Slackey", var(--display); font-weight: 400; font-size: clamp(28px, 7vh, 40px); line-height: 1; letter-spacing: .01em; margin: 0; text-wrap: balance; }
 #start p { margin: 0; color: var(--dim); line-height: 1.5; }
 .sources { display: flex; flex-direction: column; gap: 8px; }
 .sources button, label.pick { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; border-radius: 12px; padding: 10px 14px; border: 1px solid var(--line); cursor: pointer; transition: background .15s, border-color .15s; }
@@ -122,7 +122,7 @@ body.nocursor, body.nocursor * { cursor: none; }
 <canvas id="c" aria-label="Music visualizer"></canvas>
 
 <section id="start" aria-labelledby="ttl">
-  <h1 id="ttl">dsViz</h1>
+  <h1 id="ttl">lemondrop</h1>
   <p>A feedback visualizer that moves with whatever you play. Choose where the music comes from. Nothing is being listened to yet: the picture behind this card runs on a built-in stand-in until you choose.</p>
   <div class="sources">
     <button id="srcTab" class="main" type="button"><b>Capture tab or system audio</b><small>Pick the window, tab or screen that is playing, then tick the "Share audio" box at the bottom of the dialog. Without it the visualizer hears nothing.</small></button>
@@ -135,7 +135,7 @@ body.nocursor, body.nocursor * { cursor: none; }
 </section>
 
 <div id="hud" hidden>
-  <div id="name"><small id="nameSub">Scene</small><span id="nameTxt">dsViz</span><span id="note" role="status"></span></div>
+  <div id="name"><small id="nameSub">Scene</small><span id="nameTxt">lemondrop</span><span id="note" role="status"></span></div>
   <div id="player" hidden>
     <button id="pPlay" type="button">Pause</button>
     <button id="pNext" type="button" title="Next track">Skip</button>
@@ -2991,7 +2991,7 @@ function label() {
   const g = $('spaceBtns'); if (g) [...g.children].forEach((b, i) => { b.disabled = i > 0 && !cur.P.stages.includes(i); b.setAttribute('aria-pressed', String((cur.stage || 0) === i)); });
   setHash();
 }
-// The address follows the scene (#slug, or #slug/space), so a copied link opens dsViz right there. replaceState keeps Back working.
+// The address follows the scene (#slug, or #slug/space), so a copied link opens lemondrop right there. replaceState keeps Back working.
 function setHash() {
   const h = '#' + cur.P.slug + (cur.stage ? '/' + STAGES[cur.stage].toLowerCase() : '');
   try { history.replaceState(null, '', h); } catch (e) { try { location.replace(h); } catch (e2) {} }
@@ -3128,10 +3128,10 @@ $('bFavOnly').onclick = () => { CFG.favOnly = !CFG.favOnly; syncDash(); saveCfg(
 $('bReset').onclick = () => { const keep = { fav: CFG.fav, hide: CFG.hide, micId: CFG.micId }; Object.assign(CFG, JSON.parse(JSON.stringify(DEFAULTS)), keep); setDetail(CFG.detail); syncDash(); saveCfg(); };   // the scene lists survive a reset
 $('bClear').onclick = () => { CFG.fav = {}; CFG.hide = {}; syncDash(); saveCfg(); };
 $('micPick').onchange = e => { CFG.micId = e.target.value; saveCfg(); choose(useMic); };
-// Copy link: the address already names the scene and its space, so the link opens dsViz right there. Phones get the share sheet.
+// Copy link: the address already names the scene and its space, so the link opens lemondrop right there. Phones get the share sheet.
 async function copyLink() {
   const b = $('bLink'), url = location.href;
-  if (TOUCH && navigator.share) { try { await navigator.share({ title: 'dsViz', url }); } catch (e) {} return; }
+  if (TOUCH && navigator.share) { try { await navigator.share({ title: 'lemondrop', url }); } catch (e) {} return; }
   try { await navigator.clipboard.writeText(url); b.textContent = 'Copied'; setTimeout(() => { b.textContent = 'Copy link'; }, 1500); }
   catch (e) { window.prompt('Copy this link', url); }
 }
